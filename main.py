@@ -1,13 +1,14 @@
 from dotenv import load_dotenv
 load_dotenv()
-
 from data.guidelines import guidelines
-from data.format import format,format_rules
 from utils.pdf_read import extract_resume_text,select_resume_pdf
+from utils.latex_compiler import generate_pdf_from_latex
+from database.init_db import start_db
 
 from graphs.workflow import workflow
 
 def main():
+    start_db()
     print("="*30)
     print("AI RESUME ANALYZER")
     print("select your resume")
@@ -15,10 +16,8 @@ def main():
     print("getting resume-data")
     data = extract_resume_text(pdf_path)
     output = workflow.invoke({
-    "data":data,
+    "data":data["resume_data"],
     "guidelines" : guidelines,
-    "format" : format,
-    "format_rules":format_rules
     })
     print("="*30)
     print(output["ats_score"])
@@ -27,8 +26,17 @@ def main():
     print("-"*30)
     print(output["feedback"])
     print("-"*30)
+    print(output["job_vs_resume_analysis"])
+    print("-"*30)
     if output.get("rewritten_resume"):
-        print(output["rewritten_resume"])
+        # print("="*15," [latext_code] ","="*20)
+        # print(output["rewritten_resume"])
+
+        final_pdf = generate_pdf_from_latex(output["rewritten_resume"],data["file_name"])
+        print(f"PDF generated: {final_pdf}")
+        print("-" * 30)
+        print("resume rewrite done")
+
     else:
         print("=" * 30)
         print("analyzation done")

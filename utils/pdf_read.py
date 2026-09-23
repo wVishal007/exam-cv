@@ -45,4 +45,8 @@ def extract_resume_text(file_path: str) -> str:
             "It may be a scanned/image-based PDF."
         )
 
-    return resume_text
+    # return resume_text
+    return {
+        "resume_data":resume_text,
+        "file_name":Path(file_path).stem
+    }

@@ -4,15 +4,23 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 *.egg-info/
 dist/
 build/
 
-# Environment
+# Environment -- keep the example file tracked
 .env
 .env.*
+!.env.example
 *.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
 # IDE
 .vscode/
@@ -28,9 +36,13 @@ Thumbs.db
 *.log
 logs/
 
-# Output
+# Output / generated resumes
 output/
 *.pdf
+*.aux
+*.out
+*.toc
 
-# Node (from root)
+# Node
 node_modules/
+backup/
