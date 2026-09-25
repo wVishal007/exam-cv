@@ -4,15 +4,13 @@ from utils.jwt import create_access_token, create_refresh_token
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
+from config.settings import settings
 
 security = HTTPBearer()
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-ALGORITHM = "HS256"
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
 
 
 def create_registered_user(name: str, email: str, password: str):

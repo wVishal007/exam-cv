@@ -2,10 +2,11 @@
 
 An intelligent resume analysis, job-matching, and rewriting system powered by LLMs and LangGraph. Upload a PDF resume, get a detailed ATS score with actionable feedback, a resume-vs-job-description match analysis, and optionally generate an ATS-optimized LaTeX resume in one of six selectable templates.
 
-The project ships two interfaces:
+The project ships two interfaces plus one experimentation workflow:
 
 - **FastAPI web API** (`app.py`) - upload resume PDFs, register/login users, and get analysis or rewritten resumes over HTTP
 - **Local CLI** (`main.py`) - pick a resume via a file dialog and run the same LangGraph workflow locally
+- **Local workflow** (`local_workflow.py`) - single-file LangGraph harness for experimenting with nodes, routing, and state in isolation
 
 ## Features
 
@@ -45,6 +46,8 @@ The project ships two interfaces:
 
 ### LangGraph Workflow
 
+Production workflow (`graphs/workflow.py`):
+
 ```
 START → "analyze" (Analyzer Agent)
          │
@@ -55,6 +58,8 @@ START → "analyze" (Analyzer Agent)
          ▼
       END  (outputs: ats_score, latex_code)
 ```
+
+Experimentation workflow (`local_workflow.py`) mirrors the same chain in a single file for easy local testing.
 
 ## Tech Stack
 
@@ -115,6 +120,8 @@ DATABASE_URL=sqlite:///resume_agent.db
 
 > **Security**: Never commit `.env` to version control - it's in `.gitignore`. Use a strong, random `JWT_SECRET_KEY` in production.
 
+All configuration is centralized in `config/settings.py` (Pydantic Settings v2). It reads `.env` automatically and exposes typed values (`settings.GOOGLE_API_KEY`, `settings.DATABASE_URL`, `settings.JWT_SECRET_KEY`, etc.) used by the DB engine, JWT utils, auth controllers, and LLM providers — replacing the old scattered `load_dotenv()` / `os.getenv()` calls.
+
 ## Usage
 
 ### 1. Run the web API
@@ -134,6 +141,21 @@ python main.py
 ```
 
 A file dialog opens - select a resume PDF, and the LangGraph workflow runs locally: extract text → analyze → print ATS score, feedback, suggestions, and job-vs-resume analysis.
+
+### 3. Run the local experimentation workflow
+
+```bash
+# Dry-run: print the compiled graph structure + state fields (no LLM calls)
+python local_workflow.py --dry-run
+
+# Analyze a resume (scope=1, stops after analysis)
+python local_workflow.py path\to\resume.pdf
+
+# Analyze + rewrite with a template (scope=2)
+python local_workflow.py path\to\resume.pdf --rewrite 3 --jd "Backend AI engineer role..."
+```
+
+`local_workflow.py` is a single-file copy of the LangGraph pipeline (state → nodes → conditional routing → compiled workflow → local invocation). It reuses the real `ResumeAgent`, template maps, and guidelines, so it behaves like production — but you can safely tweak nodes/routing to prototype changes without touching `graphs/`.
 
 ## API Reference
 
@@ -180,12 +202,16 @@ Tokens are signed with HS256 using `JWT_SECRET_KEY`. Access tokens last 300 minu
 project/
 ├── app.py                     # FastAPI app (lifespan runs start_db(), routes mounted)
 ├── main.py                    # Local CLI entry point (file-dialog flow)
+├── local_workflow.py          # Single-file LangGraph experimentation workflow
 ├── clean_up.py                # Deletes caches / build artifacts
 ├── requirements.txt
 ├── .env                       # Secrets (git-ignored)
 ├── .env.example               # Key template (tracked)
 ├── .gitignore
 ├── README.md
+├── config/
+│   ├── __init__.py
+│   └── settings.py            # Centralized Pydantic Settings (reads .env)
 ├── agents/
 │   ├── analyzer_agent.py          # Analyzer model w/ structured output (Gemini)
 │   └── resume_rewrite_agent.py    # Rewriter model w/ structured output (Gemini)
@@ -258,6 +284,7 @@ The `agentState` carries: `data`, `guidelines`, `job_description`, `scope`, `res
 
 - `api/controllers/resume.py` invokes the workflow with `scope=1` for analysis-only, or `scope=2` + `resume_format` for the full rewrite path.
 - The rewrite node picks `format` / `format_rules` / `assemble()` via `utils/mapping.py`, then returns the assembled `latex_code` and the higher of the two ATS scores.
+- `local_workflow.py` reuses the same `agentState`, `ResumeAgent`, and template maps to build an identical graph in one file — edit its nodes/routing to experiment locally without touching the production `graphs/`.
 
 ### Agents & Structured Outputs (`agents/`, `models/structured_outputs.py`)
 
@@ -305,6 +332,9 @@ Repository functions live in `database/operations/` and are used by the API cont
 
 ## Customization
 
+### Centralized Configuration
+Edit `config/settings.py` to add/rename config values. All modules access them as `settings.<FIELD>`; API keys are also mirrored into the process environment so LangChain providers (chat models) pick them up like before.
+
 ### Modify Analysis Guidelines
 Edit `data/guidelines.py` - 30 sections covering ATS, keywords, experience, projects, AI/ML, leadership, etc.
 
@@ -328,6 +358,7 @@ Modify `models/structured_outputs.py` to change analyzer/rewrite output schema.
 - `services/` and `prompts/` are reserved but currently empty (service layer & prompt templates to be added)
 - `main.py` (CLI) is a thin local harness; the API + controllers are the primary interface
 - The legacy `operations/` auth skeleton is superseded by `api/controllers/auth.py` and can be removed
+- `local_workflow.py` is the sandbox for iterating on nodes/routing; promote stable changes back into `graphs/nodes.py` and `graphs/workflow.py`
 
 ## License
 
