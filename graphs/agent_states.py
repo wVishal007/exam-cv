@@ -1,5 +1,4 @@
-from pydantic import BaseModel,Field
-from typing import TypedDict,Annotated
+from typing import TypedDict
 
 class agentState(TypedDict):
     data : str
@@ -8,10 +7,14 @@ class agentState(TypedDict):
     format_rules : str
     job_description : str
     job_vs_resume_analysis : dict
-    # profile: dict
+    analysis_match_score: int
 
+    scope:int
+    resume_format : int
+
+    # profile: dict
     ats_score : int
     max_ats_score : int
-    rewritten_resume : str
+    latex_code : str
     feedback : str
     suggestions : str

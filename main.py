@@ -1,11 +1,13 @@
 from dotenv import load_dotenv
-load_dotenv()
 from data.guidelines import guidelines
 from utils.pdf_read import extract_resume_text,select_resume_pdf
 from utils.latex_compiler import generate_pdf_from_latex
 from database.init_db import start_db
-
 from graphs.workflow import workflow
+
+
+load_dotenv()
+
 
 def main():
     start_db()

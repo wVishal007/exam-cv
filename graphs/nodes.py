@@ -76,42 +76,24 @@ class ResumeAgent:
         return output
 agent = ResumeAgent(analyzer_model,rewrite_model)
 
-def analyze(state:agentState):
-    print("Enter job description.")
-    print("Paste the complete job description.")
-    print("When finished, type END on a new line.")
-    
-    job_description_lines = []
-    
-    while True:
-        line = input()
-    
-        if line.strip() == "END":
-            break
-        
-        job_description_lines.append(line)
-    
-    job_description = "\n".join(job_description_lines)
-    if len(job_description) != 0:
-        state["job_description"]=job_description
-        response = agent.analyze_resume(
-            state['data'],state['guidelines'],job_description
-        )
-    else:
-        state[job_description]=""      
-        response = agent.analyze_resume(
-            state['data'],state['guidelines'],job_description=""
-        )
+def analyze(state: agentState):
+    response = agent.analyze_resume(
+        state["data"],
+        state["guidelines"],
+        state["job_description"]
+    )
+
     return {
-            "ats_score": response.ats_score,
-            "feedback": response.feedback,
-            "suggestions": response.suggestions,
-            "job_vs_resume_analysis":response.job_vs_resume_analysis
-            }
+        "ats_score": response.ats_score,
+        "feedback": response.feedback,
+        "suggestions": response.suggestions,
+        "job_vs_resume_analysis": response.job_vs_resume_analysis.job_analysis_feed_back,
+        "analysis_match_score": response.job_vs_resume_analysis.analysis_match_score
+    }
 
 
 def rewrite(state: agentState):
-    selected_format = int(input("enter the format you want to use out of 1,2,3,4,5,6 : "))
+    selected_format = state["resume_format"]
     response = agent.rewrite_resume(
         data=state["data"],
         feedback=state["feedback"],
@@ -120,6 +102,7 @@ def rewrite(state: agentState):
         guidelines=state["guidelines"],
     )
     final_latex = assemble_map[selected_format](response.latex_code)
+    print(final_latex[:500])
 
     # final_latex = assemble(response.latex_code)
 
@@ -130,12 +113,12 @@ def rewrite(state: agentState):
 
     return {
         "ats_score": max_ats_score,
-        "rewritten_resume": final_latex,
+        "latex_code": final_latex,
     }
     
 def conditional_node(state:agentState):
-    query = input("enter your choice [1] analyze or rewrite [2] : ")
-    if query == "1":
+    query = state["scope"]
+    if query == 1:
         return "end"
     else:
         return "rewrite"

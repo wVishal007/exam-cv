@@ -1,16 +1,14 @@
-from database.db import cursor,conn
-
+from database.db import engine,text
 def create_users_table():
-    create_user_table_query = """
-    CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,
-    name TEXT,
-    email TEXT,
-    password TEXT
-    )
-    """
+    query = text("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name TEXT,
+            email TEXT,
+            password TEXT
+        )
+    """)
 
-    cursor.execute(create_user_table_query)
-    conn.commit()
-    # conn.close()
+    with engine.begin() as conn:
+        conn.execute(query)
     print("users table created")

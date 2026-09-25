@@ -1,59 +1,83 @@
 # AI Resume Analyzer
 
-An intelligent resume analysis, job-matching, and rewriting system powered by LLMs and LangGraph. Extract text from a PDF resume, get a detailed ATS score with actionable feedback, compare the resume against a pasted job description, and optionally generate an ATS-optimized LaTeX resume in one of six selectable templates — compiled straight to PDF.
+An intelligent resume analysis, job-matching, and rewriting system powered by LLMs and LangGraph. Upload a PDF resume, get a detailed ATS score with actionable feedback, a resume-vs-job-description match analysis, and optionally generate an ATS-optimized LaTeX resume in one of six selectable templates.
+
+The project ships two interfaces:
+
+- **FastAPI web API** (`app.py`) - upload resume PDFs, register/login users, and get analysis or rewritten resumes over HTTP
+- **Local CLI** (`main.py`) - pick a resume via a file dialog and run the same LangGraph workflow locally
 
 ## Features
 
-- **PDF Text Extraction** - Select a resume via file dialog, extract clean text using `pypdf`
+- **PDF Text Extraction** - Extract clean text from resume PDFs using `pypdf`
 - **Comprehensive Analysis** - Evaluates across 5 dimensions: ATS compatibility, JD alignment, technical strength, engineering impact, clarity/credibility
 - **ATS Scoring** - Weighted score (0-100) with detailed breakdown
 - **Structured Feedback** - High/Medium/Low priority issues with Problem/Why/Fix format
-- **Job Description Matching** - Paste any JD; get a resume-vs-JD match score and dedicated feedback
-- **Keyword Analysis** - Matching, missing, weakly demonstrated keywords
-- **FAANG-Level Standards** - Evaluates against senior engineering benchmarks
+- **Job Description Matching** - `analysis_match_score` + dedicated resume-vs-JD feedback
 - **6 Resume Templates** - Pick from `template_1` .. `template_6` when rewriting
 - **Locked LaTeX Format** - Predefined preamble, macros, header per template; only the body is rewritten; `assemble()` re-attaches the real locked top
-- **PDF Compilation** - Rewritten LaTeX is compiled to PDF via `pdflatex` and saved to `output/resumes/`
-- **SQLite Persistence** - Schema for users, resumes, resume versions, and analyses (`resume_agent.db`)
+- **PDF Compilation** - Rewritten LaTeX is compiled to PDF via `pdflatex` (CLI flow)
+- **User Auth** - Register / login with hashed passwords (argon2 via pwdlib) + JWT access/refresh tokens
+- **Database Persistence** - SQLAlchemy engine with tables for users, resumes, analyses, versions, and generated resumes
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌────────────────┐
-│  PDF Resume │────▶│  Extract     │────▶│  start_db()     │────▶│  LangGraph     │
-│  (User      │     │  Text        │     │  (SQLite init)  │     │  Workflow      │
-│   Selects)  │     │  (pypdf)     │     │                 │     │                │
-└─────────────┘     └──────────────┘     └─────────────────┘     └───────┬────────┘
-                                                                          │
-                    ┌─────────────────────────────────────────────────────┼──────────────────────┐
-                    ▼                                                     ▼                      ▼
-           ┌─────────────────┐                                   ┌──────────────────┐  ┌─────────────────┐
-           │  Analyzer Agent │                                   │  Conditional     │  │  Rewrite Agent  │
-           │  (Gemini)       │                                   │  Node            │  │  (Gemini)       │
-           │                 │                                   │                  │  │                 │
-           │ • ATS Score     │                                   │ 1 = End          │  │ • Template 1-6  │
-           │ • Feedback      │                                   │ 2 = Rewrite      │  │ • ATS Score     │
-           │ • Suggestions   │                                   │                  │  │ • LaTeX Output  │
-           │ • JD Match Score│                                   │                  │  │                 │
-           └─────────────────┘                                   └──────────────────┘  └────────┬────────┘
-                                                                                                 ▼
-                                                                                        ┌─────────────────┐
-                                                                                        │  assemble() +   │
-                                                                                        │  pdflatex       │
-                                                                                        │  → PDF          │
-                                                                                        │  (output/resumes)│
-                                                                                        └─────────────────┘
+                    ┌─────────────────────────────────────────────────────────┐
+                    │                      FastAPI (app.py)                   │
+                    │   /add/user  /login/user  /my/profile                  │
+                    │   /analyze_resume  /rewrite_resume                     │
+                    └───────────┬─────────────────────────────┬───────────────┘
+                                │                             │
+                    ┌───────────▼─────────┐       ┌───────────▼─────────────┐
+                    │ api/routes          │       │ api/controllers           │
+                    │   (HTTP → handlers) │       │   (business logic)        │
+                    └───────────┬─────────┘       └───────────┬─────────────┘
+                                │                             │
+                                │        ┌────────────────────┼───────────────────┐
+                                │        ▼                    ▼                   ▼
+                                │   graphs/workflow   database/operations   utils/ (jwt)
+                                │   (LangGraph)       (repositories)          ├ pdf_read
+                                │        └──► agents/ (analyzer + rewrite)    ├ latex_compiler
+                                │                    └──► llms/ (gemini)      └ mapping
+                                └────────────────────────────────────────────────────┘
 ```
+
+### LangGraph Workflow
+
+```
+START → "analyze" (Analyzer Agent)
+         │
+         │  scope == 1 ──────────► END (analysis only)
+         ▼
+      "rewrite" (Rewrite Agent, templates 1-6)
+         │
+         ▼
+      END  (outputs: ats_score, latex_code)
+```
+
+## Tech Stack
+
+- Python 3.10+
+- FastAPI / Uvicorn (REST API)
+- LangGraph + LangChain (agent orchestration)
+- Google Gemini (primary LLM), Mistral / NVIDIA (alternatives)
+- Pydantic v2 (schemas + structured LLM output)
+- SQLAlchemy + SQLAlchemy `text()` (database)
+- PyJWT + pwdlib (auth & password hashing)
+- pypdf (PDF text extraction), pdflatex / PDFLaTeX (PDF compilation)
 
 ## Prerequisites
 
 - **Python 3.10+**
 - **API Keys** (set in `.env`):
   - `GOOGLE_API_KEY` - Google Gemini (required)
-  - `MISTRAL_API_KEY` - Mistral (optional, for alternative LLMs)
-  - `NVIDIA_API_KEY` - NVIDIA (optional, for alternative LLMs)
-- **pdflatex binary** (for PDF compilation) - e.g. MiKTeX or TeX Live, available on `PATH`
-- **Optional (auth skeleton)**: FastAPI / uvicorn / PyJWT / pwdlib
+  - `MISTRAL_API_KEY` - Mistral (optional, alternative LLM)
+  - `NVIDIA_API_KEY` - NVIDIA (optional, alternative LLM)
+- **Auth / Database** (required for the API):
+  - `JWT_SECRET_KEY` - secret used to sign access/refresh tokens
+  - `DATABASE_URL` - SQLAlchemy connection string (e.g. `sqlite:///resume_agent.db` or a PostgreSQL URL)
+- **pdflatex binary** (for PDF compilation) - e.g. MiKTeX or TeX Live on `PATH`
 
 ## Installation
 
@@ -62,10 +86,9 @@ cd project
 pip install -r requirements.txt
 ```
 
-Make sure `pdflatex` is installed and on your `PATH`:
+Verify `pdflatex` is available if you plan to compile PDFs:
 
 ```bash
-# verify
 pdflatex --version
 ```
 
@@ -78,113 +101,165 @@ cd project
 cp .env.example .env
 ```
 
-2. Fill in your API keys:
+2. Fill in your values:
 
 ```env
 GOOGLE_API_KEY=your_gemini_api_key_here
 MISTRAL_API_KEY=your_mistral_api_key_here
 NVIDIA_API_KEY=your_nvidia_api_key_here
+
+# Required for the API:
+JWT_SECRET_KEY=your_jwt_secret_here
+DATABASE_URL=sqlite:///resume_agent.db
 ```
 
-> **Security**: Never commit `.env` to version control. It's already in `.gitignore`.
-> If you use the auth skeleton, change the hardcoded `SECRET_KEY` in `operations/auth/auth.py`.
+> **Security**: Never commit `.env` to version control - it's in `.gitignore`. Use a strong, random `JWT_SECRET_KEY` in production.
 
 ## Usage
 
+### 1. Run the web API
+
 ```bash
-cd project
+uvicorn app:app --reload
+```
+
+The FastAPI docs are available at `http://127.0.0.1:8000/docs`.
+
+On startup, the lifespan handler calls `start_db()` to create all tables.
+
+### 2. Run the local CLI
+
+```bash
 python main.py
 ```
 
-1. File dialog opens - select your resume PDF
-2. **Paste a job description** (optional) - type `END` on a new line when finished
-3. **Analyzer** outputs:
-   - ATS Score (X/100)
-   - Detailed feedback (High/Medium/Low priority)
-   - Suggestions
-   - Job-vs-resume analysis (match score + feedback)
-4. Choose to **end** (`1`) or **rewrite** (`2`) the resume
-5. If rewrite: choose a **template** (`1`-`6`), and the **Rewrite Agent** generates optimized LaTeX
-6. The LaTeX is compiled to PDF and saved to `output/resumes/<source_name>.pdf`
+A file dialog opens - select a resume PDF, and the LangGraph workflow runs locally: extract text → analyze → print ATS score, feedback, suggestions, and job-vs-resume analysis.
 
-To run the auth skeleton separately:
+## API Reference
 
-```bash
-uvicorn operations.auth.auth:app --reload
+All resume endpoints require a Bearer token obtained via login.
+
+### Auth
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/add/user` | - | Register `{name, email, password}`; password hashed with argon2 |
+| `POST` | `/login/user` | - | Login `{email, password}` → `{access_token, refresh_token}` |
+| `GET` | `/my/profile` | Bearer | Returns the authenticated `user_id` |
+
+### Resume
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/analyze_resume` | Bearer | Multipart: `file` (PDF) + `job_description` (form) → full analysis |
+| `POST` | `/rewrite_resume` | Bearer | Multipart: `file`, `job_description`, `resume_format` (1-6) → analysis + `latex_code` |
+
+Both resume endpoints:
+
+1. Save the upload to a temp file and extract text via `pypdf`
+2. Store the resume row (`database/operations/upload_resume.py`) → `resume_id`
+3. Run the LangGraph workflow via `api/controllers/resume.py`
+4. Persist the analysis (`database/operations/resume_analysis.py`)
+5. Rewrite additionally saves the generated LaTeX (`database/operations/generate_resume.py`)
+
+> If `job_description` is empty, the controller substitutes a default prompt to tailor the resume to the job market.
+
+### Auth flow
+
 ```
+Register  →  POST /add/user
+Login     →  POST /login/user           → access_token + refresh_token
+Use API   →  Authorization: Bearer <access_token>   (sub = user_id, type = "access")
+```
+
+Tokens are signed with HS256 using `JWT_SECRET_KEY`. Access tokens last 300 minutes, refresh tokens 7 days (`utils/jwt.py`).
 
 ## Project Structure
 
 ```
 project/
-├── main.py                     # Entry point: DB init → extract → analyze → rewrite → PDF
-├── clean_up.py                 # Deletes caches / build artifacts
-├── requirements.txt            # Python dependencies
-├── .env                        # API keys (not tracked)
-├── .env.example                # Template for .env (tracked)
-├── .gitignore                  # Git ignore rules
-├── README.md                   # This file
+├── app.py                     # FastAPI app (lifespan runs start_db(), routes mounted)
+├── main.py                    # Local CLI entry point (file-dialog flow)
+├── clean_up.py                # Deletes caches / build artifacts
+├── requirements.txt
+├── .env                       # Secrets (git-ignored)
+├── .env.example               # Key template (tracked)
+├── .gitignore
+├── README.md
 ├── agents/
+│   ├── analyzer_agent.py          # Analyzer model w/ structured output (Gemini)
+│   └── resume_rewrite_agent.py    # Rewriter model w/ structured output (Gemini)
+├── api/
 │   ├── __init__.py
-│   ├── analyzer_agent.py           # Analyzer model with structured output (Gemini)
-│   └── resume_rewrite_agent.py     # Rewriter model with structured output (Gemini)
+│   ├── controllers/
+│   │   ├── auth.py                # register / login / get_current_user (JWT)
+│   │   └── resume.py              # analyze_resume / rewrite_resume (workflow calls)
+│   └── routes/
+│       ├── auth.py                # POST /add/user, /login/user, GET /my/profile
+│       └── resume.py              # POST /analyze_resume, /rewrite_resume
 ├── data/
 │   ├── __init__.py
-│   ├── guidelines.py               # Strict analysis / ATS optimization guidelines
-│   ├── format.py                   # Original locked LaTeX format + assemble()
-│   └── resume_templates/           # 6 selectable LaTeX template modules
-│       ├── template_1.py .. template_6.py
+│   ├── guidelines.py              # Strict analysis / ATS optimization guidelines
+│   ├── format.py                  # Original locked LaTeX format + assemble()
+│   └── resume_templates/          # 6 selectable LaTeX template modules
+│       └── template_1.py .. template_6.py
 ├── database/
 │   ├── __init__.py
-│   ├── db.py                       # SQLite connection to resume_agent.db
-│   ├── init_db.py                  # Creates all tables
-│   └── tables/
-│       ├── user_table.py           # users
-│       ├── resume_table.py         # resume
-│       ├── resume_analysis_table.py# resume_analysis
-│       └── resume_version_table.py # resume_version
+│   ├── db.py                      # SQLAlchemy engine (DATABASE_URL)
+│   ├── init_db.py                 # start_db() - creates all tables
+│   ├── operations/                # repositories (CRUD)
+│   │   ├── auth.py                # create_user / login_user
+│   │   ├── upload_resume.py       # insert resume row
+│   │   ├── resume_analysis.py     # insert resume_analysis row
+│   │   └── generate_resume.py     # insert generated_resumes row
+│   └── tables/                    # table DDL
+│       ├── user_table.py          # users
+│       ├── resume_table.py        # resume
+│       ├── resume_analysis_table.py
+│       ├── resume_version_table.py
+│       └── generated_resume_table.py
 ├── graphs/
-│   ├── __init__.py
-│   ├── agent_states.py             # TypedDict for workflow state
-│   ├── nodes.py                    # analyze / rewrite / conditional nodes
-│   └── workflow.py                 # LangGraph StateGraph compilation
+│   ├── agent_states.py            # TypedDict workflow state
+│   ├── nodes.py                   # analyze / rewrite / conditional nodes
+│   └── workflow.py                # LangGraph StateGraph compilation
 ├── llms/
-│   ├── __init__.py
-│   ├── gemini.py                   # Gemini LLM configuration
-│   ├── mistral.py                  # Mistral LLM configuration
-│   └── nvidia.py                   # NVIDIA LLM configuration
+│   ├── gemini.py                  # Gemini LLM configuration
+│   ├── mistral.py                 # Mistral LLM configuration
+│   └── nvidia.py                  # NVIDIA LLM configuration
 ├── models/
-│   ├── __init__.py
-│   └── structured_outputs.py       # Pydantic models for analyzer/rewrite output
-├── operations/
-│   ├── auth/
-│   │   └── auth.py                 # FastAPI + JWT auth skeleton
-├── prompts/
-│   └── __init__.py                 # Prompt templates (currently empty)
-└── utils/
-    ├── __init__.py
-    ├── pdf_read.py                 # File dialog + PDF text extraction
-    ├── latex_compiler.py           # LaTeX → PDF via pdflatex
-    └── mapping.py                  # Dynamic template map (template index → format/assemble/rules)
+│   ├── schemas/
+│   │   └── auth.py                # Pydantic API schemas (Token, User, ...)
+│   └── structured_outputs.py      # LLM output models (analyzer / rewrite / JD match)
+├── operations/                    # Legacy auth skeleton (superseded by api/)
+├── prompts/                       # Reserved for prompt templates (currently empty)
+├── services/                      # Reserved service layer (currently empty)
+├── utils/
+│   ├── jwt.py                     # create_access_token / create_refresh_token
+│   ├── latex_compiler.py          # LaTeX → PDF via pdflatex
+│   ├── mapping.py                 # template index → format/assemble/rules
+│   └── pdf_read.py                # PDF text extraction (+ file dialog for CLI)
+└── output/
+    └── resumes/                   # compiled PDFs/TeX (git-ignored)
 ```
 
 ## How It Works
 
-### LangGraph Workflow (`graphs/workflow.py`)
+### LangGraph Workflow (`graphs/`)
 
 ```python
 StateGraph(agentState)
   → START → "analyze" (Analyzer Agent)
-  → Conditional Edge:
-      "end"  → END
-      "rewrite" → "rewrite" (Rewrite Agent) → END
+  → Conditional Edge (scope):
+      scope == 1  → END
+      scope != 1  → "rewrite" (Rewrite Agent) → END
 ```
 
-### Analyze Node (`graphs/nodes.py`)
+The `agentState` carries: `data`, `guidelines`, `job_description`, `scope`, `resume_format`, `ats_score`, `feedback`, `suggestions`, `job_vs_resume_analysis`, `analysis_match_score`, `latex_code`.
 
-Prompts you to paste a job description (type `END` on a new line to finish), then calls the analyzer with the resume + JD + guidelines.
+- `api/controllers/resume.py` invokes the workflow with `scope=1` for analysis-only, or `scope=2` + `resume_format` for the full rewrite path.
+- The rewrite node picks `format` / `format_rules` / `assemble()` via `utils/mapping.py`, then returns the assembled `latex_code` and the higher of the two ATS scores.
 
-### Agents & Models (`agents/`, `models/structured_outputs.py`)
+### Agents & Structured Outputs (`agents/`, `models/structured_outputs.py`)
 
 Both agents use `gemini_llm.with_structured_output(...)`:
 
@@ -214,63 +289,19 @@ Each `template_N.py` exposes `format`, `format_rules`, and `assemble()`:
 - **format_rules** - strict rules for valid, one-page LaTeX output
 - **assemble(model_output)** - discards whatever the model did to the top and re-attaches the real LOCKED_TOP
 
-`utils/mapping.py` dynamically imports all 6 templates and builds `template_map`, `assemble_map`, `format_rules_map` keyed by 1-6. The rewrite node asks which template to use, then runs `assemble_map[i](response.latex_code)`.
-
-### PDF Compilation (`utils/latex_compiler.py`)
-
-`generate_pdf_from_latex(latex_code, source_file_name)` writes the LaTeX to a temp dir, runs `pdflatex -interaction=nonstopmode -halt-on-error`, then moves the `.pdf` and `.tex` into `output/resumes/`. If the source name already exists, it prompts for a new file name.
+`utils/mapping.py` dynamically imports all 6 templates into `template_map`, `assemble_map`, and `format_rules_map` keyed by `1-6`.
 
 ### Database (`database/`)
 
-`main.py` calls `start_db()` on launch, which creates four tables in `resume_agent.db`:
+`start_db()` (`database/init_db.py`) creates the tables via raw SQL (`SQLAlchemy text()`):
 
-- `users` (user_id, name, email, password)
-- `resume` (resume_id, user_id, raw_text, latex_code, file_name, created_at)
-- `resume_analysis` (analysis_id, resume_id, ats_score, feedback, suggestions, created_at)
-- `resume_version` (version, resume_id, ats_score, created_at)
+- `users` - user_id, name, email, password (hashed)
+- `resume` - resume_id, user_id (FK), raw_text, file_name, ...
+- `resume_analysis` - analysis_id, resume_id (FK), ats_score, feedback, suggestions
+- `resume_version` - version, resume_id (FK), ats_score
+- `generated_resumes` - new_resume_id, resume_id (FK), latex_code
 
-## Sample Output
-
-```
-==============================
-AI RESUME ANALYZER
-select your resume
-getting resume-data
-db started
-Enter job description.
-Paste the complete job description.
-When finished, type END on a new line.
-> ... (paste) ...
-> END
-==============================
-78
-------------------------------
-OVERALL ASSESSMENT
-...
-ATS SCORE
-Score: 78/100
-...
-HIGH PRIORITY ISSUES
-Problem: Missing metrics in experience bullets
-Why: ATS and recruiters need quantified impact
-Fix: Add users, latency, throughput, cost savings where verifiable
-...
-KEYWORD ANALYSIS
-MATCHING KEYWORDS: Python, FastAPI, PostgreSQL, Docker
-MISSING KEYWORDS: Kubernetes, CI/CD, GraphQL
-...
-==============================
-Job-vs-resume analysis
-MATCH SCORE: 85/100
-...job analysis feedback...
-------------------------------
-enter your choice [1] analyze or rewrite [2] : 2
-enter the format you want to use out of 1,2,3,4,5,6 : 3
-...
-PDF generated: output/resumes/my_resume.pdf
-------------------------------
-resume rewrite done
-```
+Repository functions live in `database/operations/` and are used by the API controllers.
 
 ## Customization
 
@@ -280,27 +311,28 @@ Edit `data/guidelines.py` - 30 sections covering ATS, keywords, experience, proj
 ### Modify LaTeX Templates
 Edit `data/resume_templates/template_N.py`:
 - **Identity**: Change the `INFO` dict (fullname, email, phone, location, links)
-- **Sections**: Modify `BODY` template sections
-- **Macros**: Add/change `\entry`, `\project`, `\skill`, `\bullets`
-- **Rules**: Update `format_rules` for new constraints
+- **Sections**: Modify `BODY` sections; **Rules**: update `format_rules`
 
 ### Add a Template
 1. Create `data/resume_templates/template_7.py` (copy an existing one)
 2. Bump `n` in `utils/mapping.py` from `6` to `7`
 
 ### Switch LLMs
-Modify `llms/gemini.py`, `llms/mistral.py`, `llms/nvidia.py`, then update the agent imports in `agents/`.
+Modify `llms/gemini.py`, `llms/mistral.py`, `llms/nvidia.py`, then update the imports in `agents/` (e.g. uncomment the NVIDIA line in `resume_rewrite_agent.py`).
 
 ### Structured Outputs
 Modify `models/structured_outputs.py` to change analyzer/rewrite output schema.
 
-### Auth Skeleton
-`operations/auth/auth.py` is a FastAPI JWT example (OAuth2-Password-Bearer with `/token` and `/users/me/`). Replace the hardcoded `SECRET_KEY` and `fake_users_db` before any real use.
+## Roadmap / Known Issues
+
+- `services/` and `prompts/` are reserved but currently empty (service layer & prompt templates to be added)
+- `main.py` (CLI) is a thin local harness; the API + controllers are the primary interface
+- The legacy `operations/` auth skeleton is superseded by `api/controllers/auth.py` and can be removed
 
 ## License
 
-ISC License - see root `package.json` for details.
+ISC License - see the root `package.json` for details.
 
 ---
 
-**Built with**: Python, LangGraph, LangChain, Google Gemini, Pydantic, pypdf, pdflatex, FastAPI, SQLite
+**Built with**: Python, FastAPI, LangGraph, LangChain, Google Gemini, Pydantic, SQLAlchemy, pypdf, pdflatex, PyJWT, pwdlib

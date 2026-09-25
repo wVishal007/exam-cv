@@ -1,17 +1,15 @@
-from database.db import cursor,conn
-
+from database.db import engine,text
 def create_resume_version_table():
-    create_resume_version_table_query = """
+    query = text("""
     CREATE TABLE IF NOT EXISTS resume_version (
-    version INTEGER PRIMARY KEY,
+    version_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     resume_id INTEGER,
     ats_score INTEGER,
     created_at TEXT,
 
     FOREIGN KEY (resume_id) REFERENCES resume(resume_id)
     )
-    """
-    cursor.execute(create_resume_version_table_query)
-    conn.commit()
-    # conn.close()
-    print("users table created")
+    """)
+    with engine.begin() as conn:
+        conn.execute(query)
+    print("resume_version table created")

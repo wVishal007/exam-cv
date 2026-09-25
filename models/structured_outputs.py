@@ -1,5 +1,4 @@
 from pydantic import BaseModel,Field
-from typing import TypedDict,Annotated
 
 class job_vs_resume_analysis_class(BaseModel):
     analysis_match_score:int = Field(description="ats score of the new rewritten resume calculated as per guidelines if job description not provided answer 69",ge=1,le=100)

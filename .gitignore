@@ -10,6 +10,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+htmlcov/
+.tox/
+.nox/
 
 # Environment -- keep the example file tracked
 .env
@@ -21,6 +24,14 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Virtual environments
+.venv/
+venv/
+env/
 
 # IDE
 .vscode/

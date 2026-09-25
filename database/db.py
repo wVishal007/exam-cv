@@ -1,13 +1,9 @@
-import sqlite3
+from dotenv import load_dotenv
+from sqlalchemy import create_engine,text
+import os
 
-conn = sqlite3.connect("resume_agent.db")
-cursor = conn.cursor()
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-print("sqlite db started")
-
-query = "SELECT sqlite_version()"
-cursor.execute(query)
-
-result = cursor.fetchone()
-
-print(f"sqlite version is {result[0]}")
+engine = create_engine(DATABASE_URL,echo=True)
+print("connected")
