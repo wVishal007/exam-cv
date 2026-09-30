@@ -3,6 +3,7 @@ from database.db import engine, text
 
 def create_analysis(
     resume_id: int,
+    model_id:int,
     feedback: str,
     suggestions: str,
     ats_score: int,
@@ -14,10 +15,12 @@ def create_analysis(
 INSERT INTO resume_analysis 
     (
     resume_id,
+    model_id,
     ats_score,
     feedback,
     suggestions) VALUES (
         :resume_id,
+        :model_id,
         :ats_score,
         :feedback,
         :suggestions)
@@ -26,6 +29,7 @@ INSERT INTO resume_analysis
     with engine.begin() as conn:
         conn.execute(query,{
             "resume_id": resume_id,
+            "model_id":model_id,
             "feedback": feedback,
             "suggestions": suggestions,
             "ats_score": ats_score,

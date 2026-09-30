@@ -1,59 +1,49 @@
-from pdflatex import PDFLaTeX
 from pathlib import Path
 import subprocess
 import tempfile
 import shutil
 
-def generate_pdf_from_latex(latex_code,source_file_name):
-    temp_dir = tempfile.mkdtemp()
 
+def generate_pdf_from_latex(
+    latex_code: str,
+    source_file_name: str,
+    resume_id: int
+):
+    temp_dir = Path(tempfile.mkdtemp())
 
-    current_dir = Path.cwd()
-    output_dir = current_dir / "output" / "resumes"
+    output_dir = Path.cwd() / "output" / "resumes"
     output_dir.mkdir(parents=True, exist_ok=True)
-    current_dir_destination = output_dir / f"{source_file_name}.pdf"
 
+    file_name = Path(source_file_name).stem
+    tex_file = temp_dir / f"{file_name}.tex"
+    pdf_file = temp_dir / f"{file_name}.pdf"
 
-    if Path(current_dir_destination).exists():
-        user_file_name = input(f"{source_file_name}.pdf already exists enter the resume file name : ")
-        current_dir_destination = output_dir / f"{user_file_name}.pdf"
-        file_name = user_file_name
-    else:
-        file_name = source_file_name
+    try:
+        tex_file.write_text(latex_code, encoding="utf-8")
 
+        result = subprocess.run(
+            [
+                "pdflatex",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                tex_file.name,
+            ],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+        )
 
-    print(f"Temporary directory: {temp_dir}")
+        if result.returncode != 0 or not pdf_file.exists():
+            raise RuntimeError(
+                f"LaTeX compilation failed:\n{result.stdout}\n{result.stderr}"
+            )
+        destination_pdf = output_dir / f"resume_{resume_id}.pdf"
+        destination_tex = output_dir / f"resume_{resume_id}.tex"
 
-    tex_file = Path(temp_dir) / f"{file_name}.tex"
-    tex_file.write_text(latex_code, encoding="utf-8")
+        shutil.copy2(pdf_file, destination_pdf)
+        shutil.copy2(tex_file, destination_tex)
 
-    print(f"TeX file: {tex_file}")
-    print(f"TeX file exists: {tex_file.exists()}")
+        return destination_pdf
 
-    result = subprocess.run(
-        [
-            "pdflatex",
-            "-interaction=nonstopmode",
-            "-halt-on-error",
-            f"{file_name}.tex",
-        ],
-        cwd=temp_dir,
-        capture_output=True,
-        text=True,
-    )
-
-    files = [f"{file_name}.pdf",f"{file_name}.tex"]
-    for i in files:
-        temp_resume_dir = Path(temp_dir) / i
-        current_dir_destination_temp = output_dir / i 
-        shutil.move(temp_resume_dir,current_dir_destination_temp)
-    print(temp_dir)
-    shutil.rmtree(temp_dir)
-
-
-    print(f"\nPDF path: {current_dir_destination}")
-    print(f"PDF exists: {current_dir_destination.exists()}")
-
-    if not current_dir_destination.exists():
-        raise RuntimeError(f"pdflatex did not generate {file_name}.pdf")
-    return current_dir_destination
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)

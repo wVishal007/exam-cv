@@ -102,7 +102,6 @@ def rewrite(state: agentState):
         guidelines=state["guidelines"],
     )
     final_latex = assemble_map[selected_format](response.latex_code)
-    print(final_latex[:500])
 
     # final_latex = assemble(response.latex_code)
 

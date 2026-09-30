@@ -1,8 +1,10 @@
-# resume_format_minimal_mono.py  (v4 -- standalone, no hardcoded contact info)
+# resume_format_paper_ink.py  (v5 -- standalone, no hardcoded contact info)
 #
-# Pure black & white, generous whitespace, small-caps headings, no color at all. Maximum ATS-safety, minimalist look.
+# Paper & Ink: pure black & white. The sidebar is NOT filled -- it is set off
+# from the body by a single hairline rule, with a letter-spaced small-caps name.
+# Maximum ATS-safety (zero color), with a distinctive editorial two-column look.
 #
-# LOCKED_TOP  = preamble + macros + header. The model must never change it.
+# LOCKED_TOP  = preamble + macros + header (sidebar). The model must never change it.
 # BODY        = the only part the model rewrites.
 # format      = LOCKED_TOP + BODY   (paste into the prompt as "Required Format")
 # assemble()  = takes the model's output, DISCARDS whatever it did to the top,
@@ -12,24 +14,26 @@
 # Nothing else in this file needs to change.
 
 import re
+img_preview = 'https://res.cloudinary.com/cxkcte6e/image/upload/v1790602621/Screenshot_2026-09-28_190207.png'
 
 # ============================================================================
 # EDIT THIS -- and only this -- to change whose resume it is.
 # ============================================================================
 INFO = {
-    "fullname": "Vishal Singh",
-    "email": "vishalsingh31879@gmail.com",
-    "phone": "+91 7290908461",
-    "location": "",                      # optional -- e.g. "Bengaluru, India"
+    "fullname": "Jordan Avery",
+    "email": "jordan.avery.dev@gmail.com",
+    "phone": "+1 555-201-4477",
+    "location": "",                      # optional -- e.g. "Austin, TX"
     "links": [
-        ("github.com/wVishal007", "https://github.com/wVishal007"),
-        ("linkedin.com/in/vishal-singh-188013324", "https://linkedin.com/in/vishal-singh-188013324"),
-        ("vishal4u.vercel.app", "https://vishal4u.vercel.app"),
+        ("github.com/jordanavery", "https://github.com/jordanavery"),
+        ("linkedin.com/in/jordan-avery-dev", "https://linkedin.com/in/jordan-avery-dev"),
+        ("jordanavery.dev", "https://jordanavery.dev"),
     ],
 }
 
 # ---- header rendering: turns INFO into LaTeX. Nothing about a person is
 # ---- ever written directly into LOCKED_TOP_TEMPLATE below. ----------------
+# Links/email are plain black here (that is the whole point of this template).
 _ESCAPE_MAP = {
     "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
     "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
@@ -51,7 +55,7 @@ def _render_header(info):
     line1 = []
     if info.get("email"):
         e = info["email"].strip()
-        line1.append(rf"\href{{mailto:{e}}}{{\textcolor{{accent}}{{{_esc(e)}}}}}")
+        line1.append(rf"\href{{mailto:{e}}}{{{_esc(e)}}}")
     if info.get("phone"):
         line1.append(_esc(info["phone"]))
     if info.get("location"):
@@ -62,7 +66,7 @@ def _render_header(info):
     line2 = r"\sep ".join(line2)
 
     if line1 and line2:
-        header_content = line1 + r"\\[1.5pt]" + "\n  " + line2
+        header_content = line1 + r"\newline" + "\n  " + line2
     else:
         header_content = line1 or line2
 
@@ -81,8 +85,9 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
 \usepackage{iftex}
 \usepackage{etoolbox}
 \usepackage{parskip}
-\usepackage[top=0.5in,bottom=0.5in,left=0.6in,right=0.6in]{geometry}
+\usepackage[top=0.5in,bottom=0.5in,left=0.5in,right=0.5in]{geometry}
 \usepackage{enumitem}
+\usepackage{array}
 \usepackage{titlesec}
 \usepackage{xcolor}
 
@@ -92,6 +97,7 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
   \usepackage{helvet}
   \renewcommand{\familydefault}{\sfdefault}
   \usepackage{microtype}
+  \microtypesetup{expansion=false}
   \DisableLigatures[f]{encoding = *, family = *}
   \input{glyphtounicode}
   \pdfgentounicode=1
@@ -122,12 +128,17 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
 \renewcommand{\normalsize}{\fontsize{9.8}{12.2}\selectfont}
 \AtBeginDocument{\normalsize}
 
+% Heading: small-caps with a short centered hairline underneath.
 \newif\iffirstentry
+\newcommand{\boundary}[1]{%
+  \global\firstentrytrue
+  {\fontsize{10.4}{12}\selectfont\bfseries\scshape#1}\par
+  \vspace{1pt}{\hfill\rule{0.45\linewidth}{0.3pt}\hfill}\par\vspace{1pt}}
 \titleformat{\section}
-  {\fontsize{10}{12}\selectfont\bfseries\scshape\global\firstentrytrue}
-  {}{0em}{}
-  [\vspace{-1pt}\hrule height 0.3pt]
-\titlespacing*{\section}{0pt}{9pt}{4pt}
+  {\global\firstentrytrue}
+  {}{0em}
+  {\boundary}
+\titlespacing*{\section}{0pt}{8pt}{3pt}
 
 % ================= MACROS: the model may only USE these ====================
 \newenvironment{bullets}
@@ -152,22 +163,23 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
   \gap\noindent\textbf{#1}\ifblank{#2}{}{\sep\textit{#2}}\hfill #3\par\vspace{1pt}}
 
 % \skill{Label}{comma, separated, items}
-\newlength{\skilllabel}\setlength{\skilllabel}{1.35in}
+\newlength{\skilllabel}\setlength{\skilllabel}{1.3in}
 \newcommand{\skill}[2]{%
   \noindent\hangindent=\skilllabel\hangafter=1
-  \makebox[\skilllabel][l]{\textbf{#1}}#2\par\vspace{1.5pt}}
+  \makebox[\skilllabel][l]{\textbf{\textcolor{accent}{#1}}}#2\par\vspace{1.5pt}}
 
 \begin{document}
 
-% ---------------- HEADER ----------------
-\begin{center}
-  {\fontsize{20}{24}\selectfont\bfseries\fullname}\\[6pt]
+\setlength{\tabcolsep}{0pt}
+\noindent
+\begin{tabular}[t]{@{}p{0.33\textwidth}@{\hspace{0.03\textwidth}\vrule width 0.5pt\hspace{0.04\textwidth}}>{\raggedright\arraybackslash}p{\dimexpr0.60\textwidth\relax}@{}}
+  {\fontsize{18}{21}\selectfont\bfseries\fullname}
+  \vspace{3pt}
+
   {\small
+  \renewcommand{\link}[2]{\href{#1}{#2}}
   @@HEADER_CONTENT@@}
-
-\end{center}
-\vspace{-4pt}
-
+  &
 '''
 
 LOCKED_TOP = _fill(LOCKED_TOP_TEMPLATE, _render_header(INFO))
@@ -186,15 +198,15 @@ BODY = r'''
 \skill{Tools \& DevOps}{[items]}
 \skill{Fundamentals}{[items]}
 
-\section{Experience}
-\entry{[Company]}{[City, Country or Remote]}{[Role]}{[Mon YYYY] -- [Mon YYYY or Present]}
+\section{Projects}
+\project{[Project Name]}{[Tech, Stack]}{\link{[url]}{Live Demo}\sep\link{[url]}{GitHub}}
 \begin{bullets}
 \bul{[Bullet]}
 \bul{[Bullet]}
 \end{bullets}
 
-\section{Projects}
-\project{[Project Name]}{[Tech, Stack]}{\link{[url]}{Live Demo}\sep\link{[url]}{GitHub}}
+\section{Experience}
+\entry{[Company]}{[City, Country or Remote]}{[Role]}{[Mon YYYY] -- [Mon YYYY or Present]}
 \begin{bullets}
 \bul{[Bullet]}
 \bul{[Bullet]}
@@ -222,10 +234,10 @@ format_rules = r'''
 LATEX OUTPUT RULES (breaking any of these breaks compilation):
 1. Return the full document. Copy everything ABOVE the line
    "%%%%%%%%%% BODY ..." EXACTLY, character for character. Do not edit the
-   preamble, macros, or header. Only rewrite what is below that line.
+   preamble, macros, header, or the sidebar. Only rewrite what is below that line.
 2. Use ONLY these macros in the body:
      \section{}                      standard names only: Summary, Technical Skills,
-                                     Experience, Projects, Education, Achievements,
+                                     Projects, Experience, Education, Achievements,
                                      Certifications
      \skill{Label}{items}            one skills row (NOT inside a bullets environment)
      \entry{Org}{Location}{Role}{Dates}
@@ -243,6 +255,7 @@ LATEX OUTPUT RULES (breaking any of these breaks compilation):
    quotes, or unicode bullets. No markdown (**bold**, `code`, - lists).
 6. Dates: one consistent format everywhere, "Mon YYYY -- Mon YYYY" (or "Present").
 7. Output raw LaTeX only. No ``` fences and no commentary. End with \end{document}.
+   Do NOT write \end{tabular} yourself -- the pipeline closes the table.
 8. Keep it to ONE page: bullets under ~28 words, at most 3 bullets per role or
    project, at most 4 certifications.
 9. Never invent metrics, employers, locations, dates, technologies, or
@@ -255,6 +268,7 @@ def assemble(model_output: str) -> str:
     body the model produced. Anything the model did to the preamble/header
     is discarded -- so INFO is the *only* place contact details can come
     from, never something the model guessed or hallucinated.
+    The sidebar table is closed here so the model never needs to emit it.
     """
     s = (model_output or "").strip()
     s = re.sub(r"^```[a-zA-Z]*[ \t]*\n?", "", s)   # opening fence
@@ -268,5 +282,6 @@ def assemble(model_output: str) -> str:
             raise ValueError("Model output contains no body (no marker, no \\section).")
         body = s[m.start():]
 
+    body = re.sub(r"\\end\{tabular\}\\end\{document\}\s*$", "", body.strip()).strip()
     body = re.sub(r"\\end\{document\}\s*$", "", body.strip()).strip()
-    return LOCKED_TOP + BODY_MARK + "\n\n" + body + "\n\n\\end{document}\n"
+    return LOCKED_TOP + BODY_MARK + "\n\n" + body + "\n\n\\end{tabular}\n\\end{document}\n"

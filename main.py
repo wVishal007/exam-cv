@@ -1,12 +1,10 @@
 from data.guidelines import guidelines
 from utils.pdf_read import extract_resume_text,select_resume_pdf
 from utils.latex_compiler import generate_pdf_from_latex
-from database.init_db import start_db
 from graphs.workflow import workflow
 
 
 def main():
-    start_db()
     print("="*30)
     print("AI RESUME ANALYZER")
     print("select your resume")

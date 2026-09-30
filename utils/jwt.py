@@ -18,11 +18,17 @@ def create_access_token(user_id: int):
         "exp": expire,
     }
 
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
 
 
 def create_refresh_token(user_id: int):
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc) + timedelta(
+        days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS
+    )
 
     payload = {
         "sub": str(user_id),
@@ -30,4 +36,10 @@ def create_refresh_token(user_id: int):
         "exp": expire,
     }
 
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+    return token, expire

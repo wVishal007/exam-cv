@@ -19,19 +19,20 @@
 # no validate_identity, just one dict and assemble(model_output).
 
 import re
+img_preview = 'https://res.cloudinary.com/cxkcte6e/image/upload/v1790602622/Screenshot_2026-09-28_190246.png'
 
 # ============================================================================
 # EDIT THIS -- and only this -- to change whose resume it is.
 # ============================================================================
 INFO = {
-    "fullname": "Vishal Singh",
-    "email": "vishalsingh31879@gmail.com",
-    "phone": "+91 7290908461",
-    "location": "",                      # optional -- e.g. "Bengaluru, India"
+    "fullname": "Jordan Avery",
+    "email": "jordan.avery.dev@gmail.com",
+    "phone": "+1 555-201-4477",
+    "location": "",                      # optional -- e.g. "Austin, TX"
     "links": [
-        ("github.com/wVishal007", "https://github.com/wVishal007"),
-        ("linkedin.com/in/vishal-singh-188013324", "https://linkedin.com/in/vishal-singh-188013324"),
-        ("vishal4u.vercel.app", "https://vishal4u.vercel.app"),
+        ("github.com/jordanavery", "https://github.com/jordanavery"),
+        ("linkedin.com/in/jordan-avery-dev", "https://linkedin.com/in/jordan-avery-dev"),
+        ("jordanavery.dev", "https://jordanavery.dev"),
     ],
 }
 
