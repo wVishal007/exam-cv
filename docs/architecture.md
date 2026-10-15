@@ -72,8 +72,10 @@ flowchart LR
 
 Three of those dependencies are *local-process* dependencies worth calling out
 because they dominate deployability: `pdflatex` is invoked as a subprocess,
-`fitz` (PyMuPDF) renders previews in-process, and generated files are written to
-the local filesystem. See [§12](#12-runtime-infrastructure-assumptions).
+`fitz` (PyMuPDF) renders previews in-process, and the compiled PDF is persisted
+in PostgreSQL (`generated_resumes.pdf_data`) while LaTeX/PNG intermediates are
+written to the system temp directory. See
+[§12](#12-runtime-infrastructure-assumptions).
 
 ---
 
@@ -168,7 +170,7 @@ Steps (`api/routes/resume.py:23-68`):
 
 ### 4.2 `POST /rewrite_resume` (analysis + rewrite, `scope=2`)
 
-Same prefix, then the rewrite branch (`api/routes/resume.py:70-163`):
+Same prefix, then the rewrite branch (`api/routes/resume.py:70-156`):
 
 1. `template_id` (a **form field**, required) is passed to the controller as the
    graph's `resume_format` (`:98`). This rename at the HTTP boundary is the
@@ -176,22 +178,25 @@ Same prefix, then the rewrite branch (`api/routes/resume.py:70-163`):
    `resume_format`.
 2. The graph runs both nodes and returns `latex_code`.
 3. `generate_pdf_from_latex(...)` compiles the LaTeX to
-   `output/resumes/resume_{resume_id}.pdf` (`utils/latex_compiler.py:7`).
+   `{tempfile.gettempdir()}/output/resumes/resume_{resume_id}.pdf`
+   (`utils/latex_compiler.py:14`).
 4. `generate_pdf_preview(...)` renders page 1 to a PNG with PyMuPDF
-   (`utils/pdf_preview.py:6`).
+   (`utils/pdf_preview.py:12`).
 5. `upload_resume_preview(...)` uploads that PNG to Cloudinary and returns a
    secure URL (`utils/cloudinary_upload.py:4`).
-6. `save_generated_resume(...)` inserts the row. **It is called twice**
-   (`:127-133` with the Cloudinary URL, then `:135-141` with the local preview
-   path) — a bug that writes two `generated_resumes` rows per rewrite.
+6. `save_generated_resume(...)` inserts a **single** row carrying the LaTeX, the
+   Cloudinary `preview_img_url`, and the compiled PDF bytes (`pdf_data`) —
+   `api/routes/resume.py:133` reads them with `Path(pdf_path).read_bytes()`.
 7. Response adds `pdf_url` (`/generated-resumes/{resume_id}/pdf`),
    `preview_img_url`, and `new_resume_id`.
 
 ### 4.3 `GET /generated-resumes/{resume_id}/pdf`
 
-`api/routes/resume.py:178`. Resolves `Path.cwd()/output/resumes/resume_{id}.pdf`
-and streams it with `FileResponse`, or 404s. It reads the **local filesystem**,
-not object storage — relevant on ephemeral hosts ([§12](#12-runtime-infrastructure-assumptions)).
+`api/routes/resume.py:171`. Loads `generated_resumes.pdf_data` from PostgreSQL
+(joining `resumes` to confirm the row belongs to the authenticated `user_id`)
+and returns it as a `Response` with `Content-Disposition: attachment`, or 404s.
+It reads **durable database storage**, not the local filesystem — so it survives
+ephemeral, multi-instance hosts ([§12](#12-runtime-infrastructure-assumptions)).
 
 ### 4.4 Auth endpoints
 
@@ -208,11 +213,11 @@ See [§6](#6-auth-and-session-model).
 | POST | `/login/user` | — | `api/routes/auth.py:22` | `auth_sessions` |
 | GET | `/my/profile` | Bearer | `api/routes/auth.py:27` | — (returns `{user_id}` only) |
 | POST | `/analyze_resume` | Bearer | `api/routes/resume.py:24` | `resumes`, `resume_analysis` |
-| POST | `/rewrite_resume` | Bearer | `api/routes/resume.py:71` | `resumes`, `resume_analysis`, `generated_resumes` |
-| GET | `/generated-resumes/{id}/pdf` | Bearer | `api/routes/resume.py:178` | — |
-| GET | `/templates` | — | `api/routes/resume.py:202` | — |
-| GET | `/analysis-history` | Bearer | `api/routes/resume.py:165` | — |
-| GET | `/rewrite-history` | Bearer | `api/routes/resume.py:172` | — |
+| POST | `/rewrite_resume` | Bearer | `api/routes/resume.py:71` | `resumes`, `resume_analysis`, `generated_resumes` (incl. `pdf_data`) |
+| GET | `/generated-resumes/{id}/pdf` | Bearer | `api/routes/resume.py:171` | — (reads `generated_resumes.pdf_data`) |
+| GET | `/templates` | — | `api/routes/resume.py:196` | — |
+| GET | `/analysis-history` | Bearer | `api/routes/resume.py:159` | — |
+| GET | `/rewrite-history` | Bearer | `api/routes/resume.py:166` | — |
 
 `GET /resumes` is referenced in the frontend but **not implemented**.
 
@@ -409,29 +414,35 @@ fixture, per-page sidebar furniture, and identity extraction. Tests that need
 ```mermaid
 flowchart LR
     Latex[latex_code] --> Compiler["utils/latex_compiler.py<br/>mkdtemp + pdflatex"]
-    Compiler --> Out["output/resumes/resume_ID.pdf + .tex"]
+    Compiler --> Out["temp/output/resumes/resume_ID.pdf + .tex"]
     Out --> Preview["utils/pdf_preview.py<br/>fitz page 1 -> PNG"]
     Preview --> Cloud["utils/cloudinary_upload.py<br/>secure_url"]
-    Out --> Serve["GET /generated-resumes/ID/pdf<br/>FileResponse"]
+    Out --> Store["generated_resumes.pdf_data<br/>(PostgreSQL BYTEA)"]
+    Store --> Serve["GET /generated-resumes/ID/pdf<br/>Response(bytes)"]
 ```
 
 - `generate_pdf_from_latex` (`utils/latex_compiler.py:7`) writes the `.tex` into a
   fresh `tempfile.mkdtemp()`, runs
   `pdflatex -interaction=nonstopmode -halt-on-error` with `cwd=temp_dir`, and on
-  success copies both `.pdf` and `.tex` to `output/resumes/`. Failure raises
+  success copies both `.pdf` and `.tex` to the system temp dir
+  (`Path(tempfile.gettempdir())/output/resumes/`, `:14`). Failure raises
   `RuntimeError` with captured stdout/stderr.
 - `generate_pdf_preview` (`utils/pdf_preview.py:6`) opens the PDF with PyMuPDF
-  (`import fitz`), renders page 1 at 1.5× to a PNG under
-  `output/resume-previews/`.
+  (`import fitz`), renders page 1 at 1.5× to a PNG under the system temp dir
+  (`Path(tempfile.gettempdir())/output/resume-previews/`, `:12`).
 - `upload_resume_preview` (`utils/cloudinary_upload.py:4`) uploads that PNG.
   **`config/cloudinary.py` (which calls `cloudinary.config(...)`) is never
   imported**, so the SDK relies on the `CLOUDINARY_URL` environment variable;
   the `CLOUDINARY_*` names are not in `.env.example`.
+- `save_generated_resume` (`database/operations/generate_resume.py:4`) persists
+  the compiled bytes in `generated_resumes.pdf_data`, read back with
+  `Path(pdf_path).read_bytes()` (`api/routes/resume.py:133`).
 
-Two path assumptions run through this pipeline: everything is written under
-`Path.cwd()` (readable/writable only on a normal host), and the only durable
-artifact is the Cloudinary preview URL — the **PDF itself lives only on local
-disk**.
+Intermediates now live in the system temp directory (not `Path.cwd()`), so the
+pipeline only needs a writable scratch dir. Durability is split in two: the
+Cloudinary preview URL for the thumbnail, and `generated_resumes.pdf_data` for
+the **PDF bytes themselves** — the compiled file never has to outlive the
+request.
 
 ---
 
@@ -442,9 +453,11 @@ disk**.
 SQLAlchemy `text()` statements, not the ORM.
 
 `database/migrations/create_tables.py::create_all_tables()` fans out to 16 DDL
-functions in `database/migrations/schema_tables/schema_tables.py`. There is no
-migration framework and no auto-run on startup — the tables must be created once
-manually against a fresh database.
+functions in `database/migrations/schema_tables/schema_tables.py`, then runs the
+idempotent `alter_generated_resumes_add_pdf_data()`
+(`ALTER TABLE generated_resumes ADD COLUMN IF NOT EXISTS pdf_data BYTEA`) so an
+existing database picks up the PDF column. There is no migration framework and
+no auto-run on startup — run it once manually against each database.
 
 | Table | Purpose |
 |---|---|
@@ -463,7 +476,7 @@ manually against a fresh database.
 | `llm_requests` | Token/latency/cost bookkeeping |
 | `prompt_versions` | Prompt versioning |
 | `resume_version` | Links source resume → generated resume + score |
-| `generated_resumes` | Rewrite output (latex, preview URL, `pdf_storage_key`) |
+| `generated_resumes` | Rewrite output (latex, preview URL, compiled PDF `pdf_data`) |
 
 **The DDL is PostgreSQL-specific.** It uses `BIGINT GENERATED ALWAYS AS
 IDENTITY`, `JSONB`, `TIMESTAMPTZ`, and `INET`, plus `ON CONFLICT (...)` upserts
@@ -471,8 +484,9 @@ and a `LATERAL` join in `get_rewrite_history`. The default
 `DATABASE_URL = "sqlite:///resume_agent.db"` in `config/settings.py:14` therefore
 does **not** match the schema — the app is built for Postgres.
 
-> `generated_resumes.pdf_storage_key` exists in the schema but is never written;
-> the PDF is served from local disk instead ([§12](#12-runtime-infrastructure-assumptions)).
+> `generated_resumes.pdf_storage_key` remains in the schema but is legacy/unused.
+> The compiled PDF is stored in `generated_resumes.pdf_data` and served straight
+> from the database ([§12](#12-runtime-infrastructure-assumptions)).
 
 ---
 
@@ -485,10 +499,11 @@ honour:
 - **A TeX toolchain on `PATH`.** `utils/latex_compiler.py` shells out to
   `pdflatex`; without TeX Live/MiKTeX the rewrite path raises. The PyPI package
   named `pdflatex` in `requirements.txt:9` is a Python wrapper, not the engine.
-- **A writable, persistent local filesystem.** The compiler writes to
-  `Path.cwd()/output/resumes`, previews to `output/resume-previews`, and
-  `GET /generated-resumes/{id}/pdf` reads from disk. On an ephemeral,
-  per-invocation filesystem the file is gone before it can be served.
+- **A writable scratch directory.** The compiler and previewer write
+  intermediates to the system temp dir (`tempfile.gettempdir()/output/...`).
+  Serving no longer depends on disk: the compiled PDF is persisted in
+  `generated_resumes.pdf_data`, so an ephemeral, per-invocation filesystem is
+  fine.
 - **A migrated PostgreSQL instance reachable at import time.** The engine and
   the `llm_models` upsert run at import.
 - **Unbounded request duration.** A rewrite chains two LLM calls, a `pdflatex`
@@ -498,11 +513,13 @@ honour:
   `ttkbootstrap` and the Mistral/NVIDIA clients are marked Optional because only
   the relocated CLI/harness (`extras/`) uses them.
 
-Consequently a serverless deployment in its current shape cannot run the rewrite
-flow: no TeX binary, a read-only/ephemeral filesystem, short function timeouts,
-and per-instance state. The analysis-only endpoints are far closer to
-serverless-compatible once the database is externalized. A detailed deployment
-assessment is maintained separately.
+Consequently a serverless deployment still needs a TeX binary, a writable temp
+dir, and enough time for two LLM calls plus `pdflatex`. Persistent state is no
+longer the blocker: the external database holds the resume rows and the compiled
+PDF (`pdf_data`), so the ephemeral, per-instance filesystem only ever holds
+scratch files for the duration of a request. The analysis-only endpoints remain
+closest to serverless-compatible once the database is externalized. A detailed
+deployment assessment is maintained separately.
 
 ---
 
@@ -537,8 +554,6 @@ The SPA is served by an unconditional
   (`api/controllers/resume.py:22`); `rewrite_resume` re-raises. Auth controllers
   catch broadly and return `{success: False}` messages rather than raising
   `HTTPException`.
-- **Duplicate insert.** `save_generated_resume` is called twice per rewrite
-  (`api/routes/resume.py:127-141`).
 - **Unused refresh flow.** `refresh_access_token` / `logout` are implemented but
   unreachable; there is no `/refresh` or `/logout` route.
 - **Dead code (now in `extras/`).** `extras/data/format.py` still holds a legacy
@@ -585,14 +600,14 @@ The SPA is served by an unconditional
 | `extras/data/resume_templates/seed_templates.py` | seeds `resume_templates` (relocated) |
 | `utils/mapping.py` | auto-discovery of templates |
 | `utils/candidate_info.py` | identity extraction from resume text |
-| `utils/latex_compiler.py` | LaTeX → PDF via `pdflatex` |
-| `utils/pdf_preview.py` | PDF page 1 → PNG via PyMuPDF |
+| `utils/latex_compiler.py` | LaTeX → PDF via `pdflatex` (temp-dir output) |
+| `utils/pdf_preview.py` | PDF page 1 → PNG via PyMuPDF (temp-dir output) |
 | `utils/cloudinary_upload.py` | preview upload |
 | `utils/pdf_read.py` | PDF text extraction (+ CLI dialog) |
 | `utils/jwt.py` | access/refresh token minting |
 | `utils/token_hash.py` | SHA-256 refresh-token hashing |
 | `database/db.py` | SQLAlchemy engine |
 | `database/migrations/create_tables.py` | `create_all_tables()` |
-| `database/migrations/schema_tables/schema_tables.py` | 16-table DDL |
+| `database/migrations/schema_tables/schema_tables.py` | 16-table DDL + `pdf_data` ALTER |
 | `database/operations/*.py` | repositories |
 | `tests/` | template compilation + identity tests |

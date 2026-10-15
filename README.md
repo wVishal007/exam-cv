@@ -22,7 +22,7 @@ The project ships three interfaces plus one experimentation workflow:
 - **Job Description Matching** - `analysis_match_score` + dedicated resume-vs-JD feedback
 - **11 Resume Templates** - Pick from `template_1` .. `template_11` when rewriting, with preview images
 - **Locked LaTeX Format** - Predefined preamble, macros, header per template; only the body is rewritten; `assemble()` re-attaches the real locked top
-- **PDF Compilation** - Rewritten LaTeX is compiled to PDF via `pdflatex`, served back via `GET /generated-resumes/{id}/pdf`
+- **PDF Compilation & Storage** - Rewritten LaTeX is compiled to PDF via `pdflatex`; the bytes are persisted in PostgreSQL (`generated_resumes.pdf_data`) and served via `GET /generated-resumes/{id}/pdf`
 - **User Auth** - Register / login with hashed passwords (argon2 via pwdlib) + JWT access/refresh tokens
 - **Database Persistence** - SQLAlchemy engine over 16 tables (users, resumes, analyses, feedback items, generated resumes, auth sessions, ...)
 
@@ -50,6 +50,21 @@ The project ships three interfaces plus one experimentation workflow:
                                                     └──► llms/ (gemini)          └ mapping
                                             └────────────────────────────────────────────────────┘
 ```
+
+### Generated PDF storage
+
+The rewrite flow keeps the **PDF bytes** in the database so they survive restarts
+and ephemeral hosts; the page-1 thumbnail goes to Cloudinary:
+
+```
+rewrite → pdflatex (temp dir) ─┬─▶ generated_resumes.pdf_data   (PostgreSQL BYTEA)
+                               └─▶ page-1 PNG → Cloudinary       (preview_img_url)
+
+GET /generated-resumes/{id}/pdf  →  Response(bytes)  ·  owner-checked, 404 if none
+```
+
+Intermediates (`.tex` / `.pdf` / `.png`) live in the OS temp directory — not the
+working directory — so nothing on local disk has to outlive a single request.
 
 ### LangGraph Workflow
 
@@ -115,6 +130,14 @@ Create the tables once against a fresh database:
 
 ```bash
 python -c "from database.migrations.create_tables import create_all_tables; create_all_tables()"
+```
+
+`create_all_tables()` also runs an idempotent `ALTER TABLE` for the compiled-PDF
+column, so run it once against **existing** databases too (it is safe to repeat):
+
+```sql
+ALTER TABLE generated_resumes
+ADD COLUMN IF NOT EXISTS pdf_data BYTEA;
 ```
 
 Verify `pdflatex` is available if you plan to compile PDFs:
@@ -280,7 +303,7 @@ All resume endpoints require a Bearer token obtained via login.
 |--------|------|------|-------------|
 | `POST` | `/analyze_resume` | Bearer | Multipart: `file` (PDF) + `job_description` (form) → analysis |
 | `POST` | `/rewrite_resume` | Bearer | Multipart: `file`, `job_description`, `template_id` → analysis + compiled PDF |
-| `GET` | `/generated-resumes/{resume_id}/pdf` | Bearer | Streams the compiled PDF for that `resume_id` |
+| `GET` | `/generated-resumes/{resume_id}/pdf` | Bearer | Serves the compiled PDF bytes from `generated_resumes.pdf_data` (owner-checked) |
 | `GET` | `/templates` | - | `[{template_id, preview_img, name}]` for the rewrite picker |
 
 > The form field is **`template_id`**, not `resume_format`. `resume_format` is the
@@ -293,7 +316,7 @@ Both resume endpoints:
 2. Store the resume row (`database/operations/upload_resume.py`) → `resume_id`
 3. Run the LangGraph workflow via `api/controllers/resume.py`
 4. Persist the analysis (`database/operations/resume_analysis.py`)
-5. Rewrite additionally saves the generated LaTeX (`database/operations/generate_resume.py`) and compiles it to `output/resumes/resume_{resume_id}.pdf`
+5. Rewrite additionally saves the generated LaTeX and the compiled PDF bytes (`database/operations/generate_resume.py`) — compiling to a temp dir first, then persisting the bytes in `generated_resumes.pdf_data`
 
 > If `job_description` is empty, the route substitutes a default prompt to tailor the resume to the job market.
 
@@ -389,15 +412,15 @@ project/
 │   ├── __init__.py
 │   ├── db.py                      # SQLAlchemy engine (DATABASE_URL) + text()
 │   ├── migrations/
-│   │   ├── create_tables.py       # create_all_tables() - run once on a fresh DB
+│   │   ├── create_tables.py       # create_all_tables() + pdf_data ALTER - run once per DB
 │   │   └── schema_tables/
-│   │       └── schema_tables.py   # DDL for all 16 tables
+│   │       └── schema_tables.py   # DDL for all 16 tables + pdf_data ALTER
 │   └── operations/                # repositories (CRUD)
 │       ├── auth.py                # create_user / login_user
 │       ├── auth_sessions.py       # refresh-token session persistence
 │       ├── upload_resume.py       # insert resume row (RETURNING resume_id)
 │       ├── resume_analysis.py     # insert analysis + scores + feedback items
-│       ├── generate_resume.py     # insert generated_resumes row
+│       ├── generate_resume.py     # insert generated_resumes row (+ pdf bytes) / read PDF
 │       ├── llm_models.py          # llm_models lookup
 │       └── resume_templates.py    # get_templates() for the frontend picker
 ├── frontend/                     # React 19 + TypeScript + Vite + Tailwind v4 SPA
@@ -426,7 +449,7 @@ project/
 │   └── pdf_read.py                # PDF text extraction
 ├── tests/                         # Template compilation + identity tests
 └── output/
-    └── resumes/                   # compiled PDFs/TeX (git-ignored)
+    └── resumes/                   # legacy local scratch (intermediates now use the OS temp dir)
 ```
 
 ## How It Works
@@ -524,14 +547,16 @@ Templates 1 and 6-11 have no sidebar and paginate normally.
 ### Database (`database/`)
 
 `create_all_tables()` (`database/migrations/create_tables.py`) fans out to 16 DDL
-functions in `database/migrations/schema_tables/schema_tables.py`:
+functions in `database/migrations/schema_tables/schema_tables.py`, then runs the
+idempotent `alter_generated_resumes_add_pdf_data()` (`ALTER TABLE ... ADD COLUMN
+IF NOT EXISTS pdf_data BYTEA`):
 
 - `users`, `auth_sessions` - accounts and refresh-token sessions
 - `resume`, `candidate_profiles`, `job_descriptions` - uploaded source material
 - `resume_templates`, `llm_models` - reference data for the UI picker and LLM bookkeeping
 - `resume_analysis`, `resume_analysis_scores`, `analysis_feedback_items` - per-run scores and structured feedback
 - `analysis_runs`, `workflow_steps`, `llm_requests` - per-run tracing
-- `prompt_versions`, `resume_version`, `generated_resumes` - versioning and rewrite output
+- `prompt_versions`, `resume_version`, `generated_resumes` - versioning and rewrite output (LaTeX, Cloudinary preview URL, compiled PDF bytes in `pdf_data`)
 
 Repository functions live in `database/operations/` and are used by the API controllers.
 
