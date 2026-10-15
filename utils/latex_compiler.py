@@ -11,11 +11,11 @@ def generate_pdf_from_latex(
 ):
     temp_dir = Path(tempfile.mkdtemp())
 
-    # output_dir = Path.cwd() / "output" / "resumes"
-    # output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_dir = Path("/tmp/output/resumes")
+    output_dir = Path.cwd() / "output" / "resumes"
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # output_dir = Path("/tmp/output/resumes")
+    # output_dir.mkdir(parents=True, exist_ok=True)
 
     file_name = Path(source_file_name).stem
     tex_file = temp_dir / f"{file_name}.tex"
