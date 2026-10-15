@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+*.env
+.git
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+output/
+*.pdf
+*.aux
+*.out
+*.toc
+logs/
+*.log
