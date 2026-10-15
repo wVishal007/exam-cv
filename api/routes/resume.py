@@ -1,14 +1,16 @@
 from api.controllers.resume import analyze_resume,rewrite_resume
 from api.routes.auth import get_current_user
 from database.operations.upload_resume import upload_resume
-from database.operations.generate_resume import save_generated_resume
+from database.operations.generate_resume import save_generated_resume,get_rewrite_history
 from utils.pdf_read import extract_resume_text
-from database.operations.resume_analysis import create_analysis
+from database.operations.resume_analysis import create_analysis,get_analysis_history
 from fastapi import APIRouter, UploadFile, Depends, File, Form
 from database.operations.resume_templates import get_templates
 from agents.analyzer_agent import analyzer_model_id
 from agents.resume_rewrite_agent import rewrite_model_id
 from utils.latex_compiler import generate_pdf_from_latex
+from utils.cloudinary_upload import upload_resume_preview
+from utils.pdf_preview import generate_pdf_preview
 from fastapi.responses import FileResponse
 from pathlib import Path
 from fastapi import HTTPException
@@ -106,33 +108,72 @@ async def rewrite_resume_route(
         analysis_match_score=response["analysis_match_score"]
         )
 
+        pdf_path = generate_pdf_from_latex(
+            latex_code=response["latex_code"],
+            source_file_name=filename,
+            resume_id=resume_id
+        )
+
+        preview_path = generate_pdf_preview(
+            pdf_path=pdf_path,
+            resume_id=resume_id,
+        )
+
+        preview_img_url = upload_resume_preview(
+            image_path=preview_path,
+            resume_id=resume_id,
+        )
+
+        new_resume_id = save_generated_resume(
+            resume_id=resume_id,
+            template_id=template_id,
+            model_id=rewrite_model_id,
+            latex_code=response["latex_code"],
+            preview_img_url=preview_img_url,
+        )
+
         save_generated_resume(
     resume_id=resume_id,
+    preview_img_url=preview_path,
     template_id=template_id,
     model_id=rewrite_model_id,
     latex_code=response["latex_code"],
 )
 
-        pdf_path = generate_pdf_from_latex(
-    latex_code=response["latex_code"],
-    source_file_name=filename,
-    resume_id=resume_id
-)
+        
 
         # Return metadata only
         return {
+            "new_resume_id": new_resume_id,
             "resume_id": resume_id,
             "ats_score": response["ats_score"],
             "feedback": response["feedback"],
             "suggestions": response["suggestions"],
-            "job_vs_resume_analysis": response["job_vs_resume_analysis"],
-            "analysis_match_score": response["analysis_match_score"],
+            "job_vs_resume_analysis": response[
+                "job_vs_resume_analysis"
+            ],
+            "analysis_match_score": response[
+                "analysis_match_score"
+            ],
             "pdf_url": f"/generated-resumes/{resume_id}/pdf",
+            "preview_img_url": preview_img_url,
         }
 
     finally:
         os.remove(temp_path)
 
+@router.get("/analysis-history")
+async def get_resume_analysis_history(
+    user_id: int = Depends(get_current_user),
+):
+    return get_analysis_history(user_id)
+
+
+@router.get("/rewrite-history")
+async def get_resume_rewrite_history(
+    user_id: int = Depends(get_current_user),
+):
+    return get_rewrite_history(user_id)
 
 @router.get("/generated-resumes/{resume_id}/pdf")
 async def get_generated_resume_pdf(
@@ -161,5 +202,7 @@ async def get_generated_resume_pdf(
 @router.get('/templates')
 async def send_templates():
     return get_templates()
+
+
 
 

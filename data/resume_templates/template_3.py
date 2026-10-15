@@ -1,84 +1,38 @@
-# resume_format_teal_rail.py  (v5 -- standalone, no hardcoded contact info)
+# resume_format_teal_rail.py  (v6 -- standalone, no hardcoded contact info)
 #
-# Teal Rail: a filled deep-teal sidebar (name + contact) on the left, sans-serif
-# body on the right, headings with a left accent rail and uppercase type.
-# Bolder visual energy without losing ATS-safety (the sidebar is a plain table
-# cell fill, so every word still extracts as text).
-#
-# LOCKED_TOP  = preamble + macros + header (sidebar). The model must never change it.
+# LOCKED_TOP  = preamble + macros + header. The model must never change it.
 # BODY        = the only part the model rewrites.
 # format      = LOCKED_TOP + BODY   (paste into the prompt as "Required Format")
 # assemble()  = takes the model's output, DISCARDS whatever it did to the top,
-#               and re-attaches the real LOCKED_TOP (built from INFO below).
+#               and re-attaches a header rendered from the `info` argument.
+#               There is no module-level identity: the candidate's details are
+#               supplied per call, and omitted ones render as a placeholder.
 #
-# To change name / contact details, edit ONLY the INFO dict below.
-# Nothing else in this file needs to change.
-
+# Layout note: the sidebar is painted onto the page with eso-pic shipout hooks,
+# and the body flows normally. A `tabular` sidebar could not break across pages,
+# so an over-long resume pushed the whole unbreakable box to page 2 and left
+# page 1 blank.
 import re
+
+from ._common import PLACEHOLDER_INFO, fill, render_header
+
 img_preview = 'https://res.cloudinary.com/cxkcte6e/image/upload/v1790602621/Screenshot_2026-09-28_190143.png'
 
 # ============================================================================
-# EDIT THIS -- and only this -- to change whose resume it is.
+# Identity is supplied PER CALL by the caller -- see assemble() below.
+# The module-level INFO dict that used to live here was baked into LOCKED_TOP at
+# import time, so every generated resume was stamped with the template author's
+# name.
 # ============================================================================
-INFO = {
-    "fullname": "Jordan Avery",
-    "email": "jordan.avery.dev@gmail.com",
-    "phone": "+1 555-201-4477",
-    "location": "",                      # optional -- e.g. "Austin, TX"
-    "links": [
-        ("github.com/jordanavery", "https://github.com/jordanavery"),
-        ("linkedin.com/in/jordan-avery-dev", "https://linkedin.com/in/jordan-avery-dev"),
-        ("jordanavery.dev", "https://jordanavery.dev"),
-    ],
-}
 
-# ---- header rendering: turns INFO into LaTeX. Nothing about a person is
-# ---- ever written directly into LOCKED_TOP_TEMPLATE below. ----------------
-# On the dark sidebar the links/email render light (sidebarink), not accent.
-_ESCAPE_MAP = {
-    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
-    "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
-    "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
-}
+def _header_tokens(info):
+    """This template's flavour of the shared header renderer.
 
-
-def _esc(text):
-    if not text:
-        return ""
-    return "".join(_ESCAPE_MAP.get(ch, ch) for ch in str(text))
-
-
-def _render_header(info):
-    fullname = info.get("fullname", "").strip()
-    if not fullname:
-        raise ValueError("INFO['fullname'] is required")
-
-    line1 = []
-    if info.get("email"):
-        e = info["email"].strip()
-        line1.append(rf"\href{{mailto:{e}}}{{\textcolor{{sidebarink}}{{{_esc(e)}}}}}")
-    if info.get("phone"):
-        line1.append(_esc(info["phone"]))
-    if info.get("location"):
-        line1.append(_esc(info["location"]))
-    line1 = r"\sep ".join(line1)
-
-    line2 = [rf"\link{{{url}}}{{{_esc(label)}}}" for label, url in info.get("links", []) or []]
-    line2 = r"\sep ".join(line2)
-
-    if line1 and line2:
-        header_content = line1 + r"\newline" + "\n  " + line2
-    else:
-        header_content = line1 or line2
-
-    return {"FULLNAME": _esc(fullname), "HEADER_CONTENT": header_content}
-
-
-def _fill(template, tokens):
-    out = template
-    for key, val in tokens.items():
-        out = out.replace(f"@@{key}@@", val)
-    return out
+    `link_color` applies to the header only -- the body's \\link macro keeps its
+    own colour, because the sidebar templates need light-on-dark up here and
+    normal-on-paper down there.
+    """
+    return render_header(info, link_color="sidebarink", line_break=r"\newline")
 
 
 LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
@@ -86,11 +40,12 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
 \usepackage{iftex}
 \usepackage{etoolbox}
 \usepackage{parskip}
-\usepackage[top=0.4in,bottom=0.4in,left=0.45in,right=0.45in]{geometry}
+\usepackage[top=0.4in,bottom=0.4in,left=3.0in,right=0.5in]{geometry}
+\usepackage{eso-pic}
 \usepackage{enumitem}
 \usepackage{array}
 \usepackage{titlesec}
-\usepackage[table]{xcolor}
+\usepackage{xcolor}
 
 \ifPDFTeX
   \usepackage[utf8]{inputenc}
@@ -170,21 +125,33 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
   \noindent\hangindent=\skilllabel\hangafter=1
   \makebox[\skilllabel][l]{\textbf{\textcolor{accent}{#1}}}#2\par\vspace{1.5pt}}
 
+% ---------- sidebar page furniture (eso-pic) ----------
+% Drawn on the background layer, so it sits behind the text, and on every page,
+% so the sidebar continues onto page 2 instead of being one tall unbreakable box.
+\newlength{\sidebarwidth}\setlength{\sidebarwidth}{2.7in}
+\newlength{\sidebarpad}\setlength{\sidebarpad}{0.22in}
+
+\AddToShipoutPictureBG{%
+  \AtPageLowerLeft{\color{sidebarbg}\rule{\sidebarwidth}{\paperheight}}}
+
+\AddToShipoutPictureFG*{%            % the starred form applies to page 1 only
+  \AtPageUpperLeft{%
+    \raisebox{-0.45in}[0pt][0pt]{%
+      \hspace*{\sidebarpad}%
+      \parbox[t]{\dimexpr\sidebarwidth-2\sidebarpad\relax}{%
+        \raggedright
+        {\color{white}\fontsize{22}{25}\selectfont\bfseries\fullname}\par
+        \vspace{4pt}%
+        \color{sidebarink}\small\raggedright @@HEADER_CONTENT@@\par}}}}
+% ------------------------------------------------------------------------------
+
 \begin{document}
 
-\setlength{\tabcolsep}{0pt}
-\noindent
-\begin{tabular}[t]{@{}>{\columncolor{sidebarbg}}p{0.34\textwidth}@{\hspace{0.045\textwidth}}>{\raggedright\arraybackslash}p{\dimexpr0.615\textwidth\relax}@{}}
-  {\color{white}\fontsize{21}{24}\selectfont\bfseries\fullname}
-  \vspace{3pt}
-
-  {\color{sidebarink}\footnotesize
-  \renewcommand{\link}[2]{\href{#1}{\textcolor{sidebarink}{#2}}}
-  @@HEADER_CONTENT@@}
-  &
 '''
 
-LOCKED_TOP = _fill(LOCKED_TOP_TEMPLATE, _render_header(INFO))
+# Only used to build `format`, the skeleton sent to the model. assemble()
+# renders a fresh header per call and never returns this.
+LOCKED_TOP = fill(LOCKED_TOP_TEMPLATE, _header_tokens(PLACEHOLDER_INFO))
 
 BODY_MARK = '%%%%%%%%%% BODY: rewrite everything below this line %%%%%%%%%%'
 
@@ -257,7 +224,8 @@ LATEX OUTPUT RULES (breaking any of these breaks compilation):
    quotes, or unicode bullets. No markdown (**bold**, `code`, - lists).
 6. Dates: one consistent format everywhere, "Mon YYYY -- Mon YYYY" (or "Present").
 7. Output raw LaTeX only. No ``` fences and no commentary. End with \end{document}.
-   Do NOT write \end{tabular} yourself -- the pipeline closes the table.
+   Do NOT write the sidebar or any other page furniture yourself -- the
+   pipeline draws it onto every page. Output the body only.
 8. Keep it to ONE page: bullets under ~28 words, at most 3 bullets per role or
    project, at most 4 certifications.
 9. Never invent metrics, employers, locations, dates, technologies, or
@@ -265,12 +233,12 @@ LATEX OUTPUT RULES (breaking any of these breaks compilation):
 '''
 
 
-def assemble(model_output: str) -> str:
-    """Re-attach the real LOCKED_TOP (rendered from INFO above) to whatever
-    body the model produced. Anything the model did to the preamble/header
-    is discarded -- so INFO is the *only* place contact details can come
-    from, never something the model guessed or hallucinated.
-    The sidebar table is closed here so the model never needs to emit it.
+def assemble(model_output: str, info: dict | None = None) -> str:
+    """Re-attach the header for `info` to whatever body the model produced.
+
+    Anything the model did to the preamble or the header is discarded, so
+    contact details can only ever come from `info` -- never from something the
+    model guessed. With no `info`, a clearly-marked placeholder is rendered.
     """
     s = (model_output or "").strip()
     s = re.sub(r"^```[a-zA-Z]*[ \t]*\n?", "", s)   # opening fence
@@ -284,6 +252,6 @@ def assemble(model_output: str) -> str:
             raise ValueError("Model output contains no body (no marker, no \\section).")
         body = s[m.start():]
 
-    body = re.sub(r"\\end\{tabular\}\\end\{document\}\s*$", "", body.strip()).strip()
     body = re.sub(r"\\end\{document\}\s*$", "", body.strip()).strip()
-    return LOCKED_TOP + BODY_MARK + "\n\n" + body + "\n\n\\end{tabular}\n\\end{document}\n"
+    locked_top = fill(LOCKED_TOP_TEMPLATE, _header_tokens(info))
+    return locked_top + BODY_MARK + "\n\n" + body + "\n\n\\end{document}\n"

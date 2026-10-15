@@ -1,9 +1,14 @@
+from dotenv import load_dotenv
 import json
 import re
 from importlib import import_module
 from pathlib import Path
+from sqlalchemy import create_engine,text
+import os
 
-from database.db import text, engine
+load_dotenv()
+
+engine = create_engine(os.getenv('DATABASE_URL'))
 
 # This file lives next to template_1.py ... template_11.py
 TEMPLATES_DIR = Path(__file__).resolve().parent

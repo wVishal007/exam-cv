@@ -239,6 +239,25 @@ python local_workflow.py path\to\resume.pdf --rewrite 3 --jd "Backend AI enginee
 
 `local_workflow.py` is a single-file copy of the LangGraph pipeline (state → nodes → conditional routing → compiled workflow → local invocation). It reuses the real `ResumeAgent`, template maps, and guidelines, so it behaves like production — but you can safely tweak nodes/routing to prototype changes without touching `graphs/`.
 
+### 5. Run the template tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+Requires `pdflatex` and `pypdf` on PATH (they are test-time only, not runtime
+dependencies). The suite compiles all 11 templates on a **single** `pdflatex`
+pass — matching `utils/latex_compiler.py` — and asserts:
+
+- every template renders, and every one exposes `assemble(..., info=...)`;
+- injected identity reaches the PDF, and the template author's own name never does;
+- missing identity renders visible placeholders;
+- a long resume paginates with text on *every* page (the blank-page-1 regression);
+- templates 2-5 repeat their sidebar furniture on every page;
+- `utils/candidate_info.py` lifts identity out of extracted resume text.
+
+Tests that need `pdflatex` skip themselves when it is not installed.
+
 ## API Reference
 
 All resume endpoints require a Bearer token obtained via login.
@@ -452,13 +471,44 @@ class rewrite_output(BaseModel):
 
 Each `template_N.py` exposes `format`, `format_rules`, and `assemble()`:
 
-- **INFO dict** - name, email, phone, location, links (the only thing you edit for identity)
-- **LOCKED_TOP** - preamble, macros, header rendered from INFO (never modified)
-- **BODY_MARK + BODY** - the only part the model rewrites
-- **format_rules** - strict rules for valid, one-page LaTeX output
-- **assemble(model_output)** - discards whatever the model did to the top and re-attaches the real LOCKED_TOP
+- **`format`** - `LOCKED_TOP` + `BODY_MARK` + `BODY`: the skeleton sent to the model.
+- **`LOCKED_TOP`** - preamble, macros, and a *placeholder* header. The model must never change it.
+- **`BODY_MARK` + `BODY`** - the only part the model rewrites.
+- **`format_rules`** - strict rules for valid LaTeX output.
+- **`assemble(model_output, info=None)`** - discards whatever the model did to the top and re-attaches the real header, rendered from `info`.
 
-`utils/mapping.py` dynamically imports all 11 templates into `template_map`, `assemble_map`, and `format_rules_map` keyed by `1-11`.
+**Identity is supplied per call, not baked into the template.** A template renders a
+different header for every candidate, so the 11 templates are safe to share across
+users. `graphs/nodes.py` and `local_workflow.py` call
+`extract_candidate_info(state["data"])` on the uploaded resume's extracted text and
+pass the result as `info`. Missing fields fall back to obvious placeholders
+(`[CANDIDATE NAME]`, …) rather than leaking the template author's details.
+
+Escaping, placeholder tokens, and header rendering live once in
+`data/resume_templates/_common.py`, so all 11 templates stay in sync.
+
+`utils/mapping.py` dynamically imports all 11 templates into `template_map`,
+`assemble_map`, and `format_rules_map` keyed by `1-11`.
+
+#### Pagination and the sidebar templates
+
+Templates 2, 3, 4, and 5 use a two-column sidebar. This used to be a `tabular`,
+which cannot break across pages: once the body outgrew one page, TeX pushed the
+entire box to page 2 and left page 1 blank.
+
+The sidebar is now page furniture drawn with `eso-pic`:
+
+- `\AddToShipoutPictureBG` paints the band (or hairline) on **every** page;
+- `\AddToShipoutPictureFG*` paints the name and contact block on page 1 only;
+- the body returns to normal flow with a widened left margin.
+
+`\AtPageLowerLeft` / `\AtPageUpperLeft` position against absolute page
+coordinates, so this is correct on the **first** `pdflatex` pass — which matters,
+because `utils/latex_compiler.py` compiles exactly once. A TikZ `remember
+picture` / `current page` anchor would need a second pass and would render blank
+the first time.
+
+Templates 1 and 6-11 have no sidebar and paginate normally.
 
 ### Database (`database/`)
 
@@ -484,7 +534,8 @@ Edit `data/guidelines.py` - 30 sections covering ATS, keywords, experience, proj
 
 ### Modify LaTeX Templates
 Edit `data/resume_templates/template_N.py`:
-- **Identity**: Change the `INFO` dict (fullname, email, phone, location, links)
+- **Identity**: nothing to edit — identity arrives per call via `assemble(..., info=...)`
+- **Header**: change `_header_tokens()` in the template, or `render_header()` in `_common.py` to change all of them at once
 - **Sections**: Modify `BODY` sections; **Rules**: update `format_rules`
 
 ### Add a Template

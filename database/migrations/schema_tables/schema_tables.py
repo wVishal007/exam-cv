@@ -51,7 +51,7 @@ def create_llm_models_table():
 
 def create_resume_table():
     query = text("""
-        CREATE TABLE IF NOT EXISTS resume (
+        CREATE TABLE IF NOT EXISTS resumes (
             resume_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             user_id BIGINT,
             raw_text TEXT,
@@ -76,7 +76,7 @@ def create_candidate_profiles_table():
             content_hash TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(user_id),
-            FOREIGN KEY (source_resume_id) REFERENCES resume(resume_id)
+            FOREIGN KEY (source_resume_id) REFERENCES resumes(resume_id)
         )
     """)
     with engine.begin() as conn:
@@ -138,7 +138,7 @@ def create_analysis_runs_table():
             completed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(user_id),
-            FOREIGN KEY (resume_id) REFERENCES resume(resume_id),
+            FOREIGN KEY (resume_id) REFERENCES resumes(resume_id),
             FOREIGN KEY (job_description_id)
                 REFERENCES job_descriptions(job_description_id)
         )
@@ -204,6 +204,7 @@ def create_generated_resumes_table():
             template_id BIGINT,
             template_version TEXT,
             latex_code TEXT,
+            preview_img_url TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             model_id INTEGER,
             profile_id BIGINT,
@@ -212,7 +213,7 @@ def create_generated_resumes_table():
             validation_status TEXT,
             page_count INTEGER,
             factuality_status TEXT,
-            FOREIGN KEY (resume_id) REFERENCES resume(resume_id),
+            FOREIGN KEY (resume_id) REFERENCES resumes(resume_id),
             FOREIGN KEY (template_id) REFERENCES resume_templates(template_id),
             FOREIGN KEY (model_id) REFERENCES llm_models(model_id),
             FOREIGN KEY (profile_id) REFERENCES candidate_profiles(profile_id),
@@ -238,7 +239,7 @@ def create_resume_analysis_table():
             job_vs_resume_analysis TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             run_id BIGINT,
-            FOREIGN KEY (resume_id) REFERENCES resume(resume_id),
+            FOREIGN KEY (resume_id) REFERENCES resumes(resume_id),
             FOREIGN KEY (model_id) REFERENCES llm_models(model_id),
             FOREIGN KEY (run_id) REFERENCES analysis_runs(run_id)
         )
@@ -295,7 +296,7 @@ def create_resume_version_table():
             new_resume_id BIGINT,
             ats_score INTEGER,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (resume_id) REFERENCES resume(resume_id),
+            FOREIGN KEY (resume_id) REFERENCES resumes(resume_id),
             FOREIGN KEY (new_resume_id)
                 REFERENCES generated_resumes(new_resume_id)
         )

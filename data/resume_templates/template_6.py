@@ -1,92 +1,33 @@
 # resume_format_signal_block.py  (standalone, no hardcoded contact info)
 #
-# Teal accent, left-aligned name with a right-aligned contact block,
-# section labels marked with a small filled color chip instead of a rule.
-# Reads more "product/startup" than the other rule-underline templates.
-# The chip is a real colorbox with real text next to it -- pdftotext still
-# extracts the section label as plain text (see the self-test at the
-# bottom: `python3 resume_format_signal_block.py`).
-#
-# Same fixed contract as every other file in this set:
-#   LOCKED_TOP  = preamble + macros + header. The model must never change it.
-#   BODY        = the only part the model rewrites.
-#   format      = LOCKED_TOP + BODY   (paste into the prompt as "Required Format")
-#   assemble()  = takes the model's output, DISCARDS whatever it did to the top,
-#                 and re-attaches the real LOCKED_TOP.
-#
-# To change name / contact details, edit ONLY the INFO dict below.
-# Nothing else in this file needs to change -- no separate identity module,
-# no validate_identity, just one dict and assemble(model_output).
-
+# LOCKED_TOP  = preamble + macros + header. The model must never change it.
+# BODY        = the only part the model rewrites.
+# format      = LOCKED_TOP + BODY   (paste into the prompt as "Required Format")
+# assemble()  = takes the model's output, DISCARDS whatever it did to the top,
+#               and re-attaches a header rendered from the `info` argument.
+#               There is no module-level identity: the candidate's details are
+#               supplied per call, and omitted ones render as a placeholder.
 import re
+
+from ._common import PLACEHOLDER_INFO, fill, render_header
+
 img_preview = 'https://res.cloudinary.com/cxkcte6e/image/upload/v1790602622/Screenshot_2026-09-28_190246.png'
 
 # ============================================================================
-# EDIT THIS -- and only this -- to change whose resume it is.
+# Identity is supplied PER CALL by the caller -- see assemble() below.
+# The module-level INFO dict that used to live here was baked into LOCKED_TOP at
+# import time, so every generated resume was stamped with the template author's
+# name.
 # ============================================================================
-INFO = {
-    "fullname": "Jordan Avery",
-    "email": "jordan.avery.dev@gmail.com",
-    "phone": "+1 555-201-4477",
-    "location": "",                      # optional -- e.g. "Austin, TX"
-    "links": [
-        ("github.com/jordanavery", "https://github.com/jordanavery"),
-        ("linkedin.com/in/jordan-avery-dev", "https://linkedin.com/in/jordan-avery-dev"),
-        ("jordanavery.dev", "https://jordanavery.dev"),
-    ],
-}
 
-# ---- header rendering: turns INFO into LaTeX. Nothing about a person is
-# ---- ever written directly into LOCKED_TOP_TEMPLATE below. ----------------
-_ESCAPE_MAP = {
-    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
-    "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
-    "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
-}
+def _header_tokens(info):
+    """This template's flavour of the shared header renderer.
 
-
-def _esc(text):
-    if not text:
-        return ""
-    return "".join(_ESCAPE_MAP.get(ch, ch) for ch in str(text))
-
-
-def _render_header(info):
-    fullname = info.get("fullname", "").strip()
-    if not fullname:
-        raise ValueError("INFO['fullname'] is required")
-
-    # Right-hand contact block: email / phone / location on one line,
-    # links on the next -- same escaping rule as everywhere else in this
-    # file: raw value inside the \href target, escaped value as the
-    # visible text, so an "_" or "&" in an address/handle can't break
-    # compilation.
-    line1 = []
-    if info.get("email"):
-        e = info["email"].strip()
-        line1.append(rf"\href{{mailto:{e}}}{{\textcolor{{accent}}{{{_esc(e)}}}}}")
-    if info.get("phone"):
-        line1.append(_esc(info["phone"]))
-    if info.get("location"):
-        line1.append(_esc(info["location"]))
-    line1 = r"\sep ".join(line1)
-
-    line2 = [rf"\link{{{url}}}{{{_esc(label)}}}" for label, url in info.get("links", []) or []]
-    line2 = r"\sep ".join(line2)
-
-    if line1 and line2:
-        header_content = line1 + r"\\[3pt]" + "\n  " + line2
-    else:
-        header_content = line1 or line2
-
-    return {"FULLNAME": _esc(fullname), "HEADER_CONTENT": header_content}
-
-
-def _fill(template, tokens):
-    out = template
-    for key, val in tokens.items():
-        out = out.replace(f"@@{key}@@", val)
-    return out
+    `link_color` applies to the header only -- the body's \\link macro keeps its
+    own colour, because the sidebar templates need light-on-dark up here and
+    normal-on-paper down there.
+    """
+    return render_header(info, link_color="accent", line_break=r"\\[3pt]")
 
 
 LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
@@ -187,7 +128,9 @@ LOCKED_TOP_TEMPLATE = r'''\documentclass[a4paper,10pt]{article}
 
 '''
 
-LOCKED_TOP = _fill(LOCKED_TOP_TEMPLATE, _render_header(INFO))
+# Only used to build `format`, the skeleton sent to the model. assemble()
+# renders a fresh header per call and never returns this.
+LOCKED_TOP = fill(LOCKED_TOP_TEMPLATE, _header_tokens(PLACEHOLDER_INFO))
 
 BODY_MARK = "%%%%%%%%%% BODY: rewrite everything below this line %%%%%%%%%%"
 
@@ -262,11 +205,12 @@ LATEX OUTPUT RULES (breaking any of these breaks compilation):
 '''
 
 
-def assemble(model_output: str) -> str:
-    """Re-attach the real LOCKED_TOP (rendered from INFO above) to whatever
-    body the model produced. Anything the model did to the preamble/header
-    is discarded -- so INFO is the *only* place contact details can come
-    from, never something the model guessed or hallucinated.
+def assemble(model_output: str, info: dict | None = None) -> str:
+    """Re-attach the header for `info` to whatever body the model produced.
+
+    Anything the model did to the preamble or the header is discarded, so
+    contact details can only ever come from `info` -- never from something the
+    model guessed. With no `info`, a clearly-marked placeholder is rendered.
     """
     s = (model_output or "").strip()
     s = re.sub(r"^```[a-zA-Z]*[ \t]*\n?", "", s)   # opening fence
@@ -281,8 +225,8 @@ def assemble(model_output: str) -> str:
         body = s[m.start():]
 
     body = re.sub(r"\\end\{document\}\s*$", "", body.strip()).strip()
-    return LOCKED_TOP + BODY_MARK + "\n\n" + body + "\n\n\\end{document}\n"
-
+    locked_top = fill(LOCKED_TOP_TEMPLATE, _header_tokens(info))
+    return locked_top + BODY_MARK + "\n\n" + body + "\n\n\\end{document}\n"
 
 if __name__ == "__main__":
     import shutil, subprocess, sys, tempfile
@@ -313,7 +257,14 @@ payments platform.
     if not shutil.which("pdflatex"):
         print("pdflatex not found on PATH -- skipping compile check.")
         sys.exit(0)
-    final_tex = assemble(sample_body_output)
+    sample_info = {
+        "fullname": "Jordan Avery",
+        "email": "jordan.avery@example.com",
+        "phone": "+1 555 010 0134",
+        "location": "Austin, TX",
+        "links": [("github.com/example", "https://github.com/example")],
+    }
+    final_tex = assemble(sample_body_output, info=sample_info)
     with tempfile.TemporaryDirectory() as td:
         with open(f"{td}/test.tex", "w") as f:
             f.write(final_tex)

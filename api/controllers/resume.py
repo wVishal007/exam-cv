@@ -1,7 +1,7 @@
 from data.guidelines import guidelines
 # from utils.pdf_read import extract_resume_text,select_resume_pdf
 # from utils.latex_compiler import generate_pdf_from_latex
-from graphs.workflow import workflow
+from graphs.resume_workflow import workflow
 
 def analyze_resume(data:str,job_description:str):
     try:

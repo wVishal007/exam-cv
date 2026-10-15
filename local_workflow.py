@@ -42,6 +42,7 @@ Usage
 # --------------------------------------------------------------------------- #
 from graphs.nodes import agent                     # ResumeAgent(analyzer, rewrite)
 from utils.mapping import template_map, assemble_map, format_rules_map
+from utils.candidate_info import extract_candidate_info
 from data.guidelines import guidelines
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
@@ -91,7 +92,9 @@ def rewrite(state: agentState) -> dict:
         format_rules=format_rules_map[selected_format],
         guidelines=state["guidelines"],
     )
-    final_latex = assemble_map[selected_format](response.latex_code)
+    final_latex = assemble_map[selected_format](
+        response.latex_code, info=extract_candidate_info(state["data"])
+    )
     return {
         "ats_score": max(state["ats_score"], response.ats_score),
         "latex_code": final_latex,

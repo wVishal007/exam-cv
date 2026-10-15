@@ -4,7 +4,7 @@ from database.db import engine, text
 def upload_resume(user_id: int, raw_text: str, file_name: str):
     query = text(
         """
-INSERT INTO resume (user_id,raw_text,file_name) VALUES (:user_id,:raw_text,:file_name)
+INSERT INTO resumes (user_id,raw_text,file_name) VALUES (:user_id,:raw_text,:file_name)
 RETURNING resume_id
 """
     )

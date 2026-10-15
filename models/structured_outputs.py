@@ -1,7 +1,7 @@
 from pydantic import BaseModel,Field
 
 class job_vs_resume_analysis_class(BaseModel):
-    analysis_match_score:int = Field(description="ats score of the new rewritten resume calculated as per guidelines if job description not provided answer 69",ge=1,le=100)
+    analysis_match_score:int = Field(description="ats score of the new rewritten resume calculated as per guidelines if job description not provided answer 0",ge=1,le=100)
     job_analysis_feed_back : str = Field(description="feedback of the candidate's resume vs job description if job description not provided just answer no job description provided")
 
 class analyzer_output(BaseModel):

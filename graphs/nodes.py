@@ -2,6 +2,7 @@ from agents.analyzer_agent import analyzer_model
 from agents.resume_rewrite_agent import rewrite_model
 from .agent_states import agentState
 from utils.mapping import template_map,assemble_map,format_rules_map
+from utils.candidate_info import extract_candidate_info
 class ResumeAgent:
     def __init__(self,analyzer_model,rewrite_model):
         self.analyzer_model = analyzer_model
@@ -101,9 +102,10 @@ def rewrite(state: agentState):
         format_rules=format_rules_map[selected_format],
         guidelines=state["guidelines"],
     )
-    final_latex = assemble_map[selected_format](response.latex_code)
-
-    # final_latex = assemble(response.latex_code)
+    # Identity comes from the uploaded resume, not from the template, so the
+    # same template renders a different header for every candidate.
+    info = extract_candidate_info(state["data"])
+    final_latex = assemble_map[selected_format](response.latex_code, info=info)
 
     max_ats_score = max(
         state["ats_score"],
