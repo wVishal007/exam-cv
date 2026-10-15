@@ -7,6 +7,7 @@ def save_generated_resume(
     model_id: int,
     latex_code: str,
     preview_img_url: str,
+    pdf_data: bytes,
 ):
     query = text("""
         INSERT INTO generated_resumes (
@@ -14,14 +15,16 @@ def save_generated_resume(
             template_id,
             model_id,
             latex_code,
-            preview_img_url
+            preview_img_url,
+            pdf_data
         )
         VALUES (
             :resume_id,
             :template_id,
             :model_id,
             :latex_code,
-            :preview_img_url
+            :preview_img_url,
+            :pdf_data
         )
         RETURNING new_resume_id
     """)
@@ -35,10 +38,34 @@ def save_generated_resume(
                 "model_id": model_id,
                 "latex_code": latex_code,
                 "preview_img_url": preview_img_url,
+                "pdf_data": pdf_data,
             },
         )
 
         return result.scalar_one()
+
+
+def get_generated_resume_pdf(resume_id: int, user_id: int):
+    query = text("""
+        SELECT g.pdf_data
+        FROM generated_resumes g
+
+        INNER JOIN resumes r
+            ON g.resume_id = r.resume_id
+
+        WHERE g.resume_id = :resume_id
+          AND r.user_id = :user_id
+
+        ORDER BY g.new_resume_id DESC
+        LIMIT 1
+    """)
+
+    with engine.begin() as conn:
+        result = conn.execute(
+            query,
+            {"resume_id": resume_id, "user_id": user_id},
+        )
+        return result.scalar_one_or_none()
 
 def get_rewrite_history(user_id: int):
     query = text("""

@@ -210,6 +210,7 @@ def create_generated_resumes_table():
             profile_id BIGINT,
             prompt_version_id BIGINT,
             pdf_storage_key TEXT,
+            pdf_data BYTEA,
             validation_status TEXT,
             page_count INTEGER,
             factuality_status TEXT,
@@ -224,6 +225,16 @@ def create_generated_resumes_table():
     with engine.begin() as conn:
         conn.execute(query)
     print("generated_resumes table created")
+
+
+def alter_generated_resumes_add_pdf_data():
+    query = text("""
+        ALTER TABLE generated_resumes
+        ADD COLUMN IF NOT EXISTS pdf_data BYTEA
+    """)
+    with engine.begin() as conn:
+        conn.execute(query)
+    print("generated_resumes.pdf_data column ensured")
 
 
 def create_resume_analysis_table():

@@ -458,6 +458,8 @@
 
 #     pdf_storage_key TEXT,
 
+#     pdf_data BYTEA,
+
 #     validation_status TEXT,
 
 #     page_count INTEGER,

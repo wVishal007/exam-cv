@@ -1,7 +1,7 @@
 from api.controllers.resume import analyze_resume,rewrite_resume
 from api.routes.auth import get_current_user
 from database.operations.upload_resume import upload_resume
-from database.operations.generate_resume import save_generated_resume,get_rewrite_history
+from database.operations.generate_resume import save_generated_resume,get_rewrite_history,get_generated_resume_pdf
 from utils.pdf_read import extract_resume_text
 from database.operations.resume_analysis import create_analysis,get_analysis_history
 from fastapi import APIRouter, UploadFile, Depends, File, Form
@@ -11,7 +11,7 @@ from agents.resume_rewrite_agent import rewrite_model_id
 from utils.latex_compiler import generate_pdf_from_latex
 from utils.cloudinary_upload import upload_resume_preview
 from utils.pdf_preview import generate_pdf_preview
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pathlib import Path
 from fastapi import HTTPException
 import tempfile
@@ -130,15 +130,8 @@ async def rewrite_resume_route(
             model_id=rewrite_model_id,
             latex_code=response["latex_code"],
             preview_img_url=preview_img_url,
+            pdf_data=Path(pdf_path).read_bytes(),
         )
-
-        save_generated_resume(
-    resume_id=resume_id,
-    preview_img_url=preview_path,
-    template_id=template_id,
-    model_id=rewrite_model_id,
-    latex_code=response["latex_code"],
-)
 
         
 
@@ -176,27 +169,27 @@ async def get_resume_rewrite_history(
     return get_rewrite_history(user_id)
 
 @router.get("/generated-resumes/{resume_id}/pdf")
-async def get_generated_resume_pdf(
+async def get_generated_resume_pdf_route(
     resume_id: int,
     user_id: int = Depends(get_current_user),
 ):
-    pdf_path = (
-        Path.cwd()
-        / "output"
-        / "resumes"
-        / f"resume_{resume_id}.pdf"
+    pdf_bytes = get_generated_resume_pdf(
+        resume_id=resume_id,
+        user_id=user_id,
     )
 
-    if not pdf_path.exists():
+    if pdf_bytes is None:
         raise HTTPException(
             status_code=404,
             detail="Generated resume PDF not found",
         )
 
-    return FileResponse(
-        path=pdf_path,
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
-        filename=f"resume_{resume_id}.pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="resume_{resume_id}.pdf"'
+        },
     )
 
 @router.get('/templates')

@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 
 import fitz
@@ -8,7 +9,7 @@ def generate_pdf_preview(
     resume_id: int,
 ) -> str:
     preview_dir = (
-        Path.cwd()
+        Path(tempfile.gettempdir())
         / "output"
         / "resume-previews"
     )
