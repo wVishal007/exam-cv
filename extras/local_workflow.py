@@ -40,6 +40,15 @@ Usage
 # --------------------------------------------------------------------------- #
 # 2. AGENT LOGIC (reused, not duplicated)
 # --------------------------------------------------------------------------- #
+import sys
+from pathlib import Path
+
+# Moved to extras/. Put the project root on sys.path so the absolute imports
+# below (graphs.*, utils.*, data.*) keep working.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from graphs.nodes import agent                     # ResumeAgent(analyzer, rewrite)
 from utils.mapping import template_map, assemble_map, format_rules_map
 from utils.candidate_info import extract_candidate_info

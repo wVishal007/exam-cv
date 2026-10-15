@@ -1,3 +1,12 @@
+import sys
+from pathlib import Path
+
+# Moved to extras/. Put the project root on sys.path so the absolute imports
+# below (data.*, utils.*, graphs.*) keep working.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from data.guidelines import guidelines
 from utils.pdf_read import extract_resume_text,select_resume_pdf
 from utils.latex_compiler import generate_pdf_from_latex

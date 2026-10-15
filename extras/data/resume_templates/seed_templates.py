@@ -1,3 +1,4 @@
+
 from dotenv import load_dotenv
 import json
 import re
@@ -6,12 +7,28 @@ from pathlib import Path
 from sqlalchemy import create_engine,text
 import os
 
+import sys
+from pathlib import Path
+
+
+
 load_dotenv()
 
 engine = create_engine(os.getenv('DATABASE_URL'))
 
-# This file lives next to template_1.py ... template_11.py
-TEMPLATES_DIR = Path(__file__).resolve().parent
+
+# Moved to extras/data/resume_templates/. Put the project root on sys.path so
+# `import_module("data.resume_templates.template_N")` resolves as before.
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+
+
+
+# Moved to extras/data/resume_templates/; the real templates still live in
+# project/data/resume_templates/.
+TEMPLATES_DIR = _PROJECT_ROOT / "data" / "resume_templates"
 
 template_map = {}
 assemble_map = {}

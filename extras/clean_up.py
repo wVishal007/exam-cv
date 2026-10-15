@@ -1,5 +1,13 @@
+import os
+import sys
 from pathlib import Path
 import shutil
+
+# Moved to extras/. Make the project root importable for consistency with the
+# other relocated scripts (this one is stdlib-only, so nothing strictly needs it).
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 ROOT = Path.cwd()
@@ -72,5 +80,4 @@ def clean_project(root: Path):
 
 
 if __name__ == "__main__":
-    import os
     clean_project(ROOT)

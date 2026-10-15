@@ -1,14 +1,51 @@
-langchain>=0.3.0
-langchain-google-genai>=2.0.0
-langgraph>=0.2.0
-pydantic>=2.0
-pydantic-settings>=2.0
-ttkbootstrap>=1.10
-pypdf>=4.0
-python-dotenv>=1.0
-pdflatex>=0.1.3
+# AI Resume Analyzer - backend dependencies
+#
+# Install with:  pip install -r requirements.txt
+#
+# pdflatex is NOT a pip dependency. The PDF pipeline shells out to the system
+# `pdflatex` binary (utils/latex_compiler.py), so TeX Live / MiKTeX must be on
+# PATH. PyMuPDF (import fitz) is a pip dependency and is listed under PDF.
+
+# --- Core web API ---
 fastapi>=0.110.0
 uvicorn>=0.29.0
+python-multipart>=0.0.9        # required by FastAPI for File/Form/UploadFile
+pydantic>=2.0
+pydantic-settings>=2.0
+email-validator>=2.2.0         # required by pydantic EmailStr (/add/user, /login/user)
+
+# --- Database ---
+# SQLAlchemy 2.1 (stable since 2026-09-24) changed the default DBAPI for
+# "postgresql://" URLs from psycopg2 to psycopg (v3). Both a plain
+# PostgreSQL URL (Neon) and an explicit "+psycopg" URL (local .env) therefore
+# resolve to Psycopg 3, so the psycopg distribution below is the single driver.
+psycopg[binary]>=3.2.0
+SQLAlchemy>=2.0                # database/db.py engine + text() statements
+
+# --- Auth ---
 PyJWT>=2.8.0
-pwdlib>=0.2.0
-cloudinary
+pwdlib[argon2]>=0.2.0          # PasswordHash.recommended() needs the Argon2 extra (argon2-cffi)
+python-dotenv>=1.0
+
+# --- PDF / storage ---
+pypdf>=4.0                     # resume text extraction
+PyMuPDF>=1.24.0                # import fitz - page-1 preview rendering
+cloudinary>=1.40.0             # preview image upload
+
+# --- LLM / workflow ---
+langgraph>=0.2.0
+langchain-google-genai>=2.0.0  # langchain-core is pulled in transitively
+
+# --- Optional: alternate LLM providers ---
+# Only used by extras/llms/mistral.py and extras/llms/nvidia.py, which app.py
+# never imports. Uncomment to run those harnesses locally.
+# langchain-mistralai
+# langchain-nvidia-ai-endpoints
+
+# --- Optional: local CLI / GUI ---
+# Only used by extras/main.py and extras/local_workflow.py, which app.py never
+# imports. Uncomment to run the local harnesses.
+# ttkbootstrap>=1.10
+
+# --- Dev / test (not required to run the server) ---
+# pytest>=8.0

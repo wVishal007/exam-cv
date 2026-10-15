@@ -6,8 +6,12 @@ The project ships three interfaces plus one experimentation workflow:
 
 - **React web UI** (`frontend/`) - analyze a resume, browse templates, rewrite, and preview the generated PDF
 - **FastAPI web API** (`app.py`) - upload resume PDFs, register/login users, and get analysis or rewritten resumes over HTTP; also serves the built frontend from `frontend/dist`
-- **Local CLI** (`main.py`) - pick a resume via a file dialog and run the same LangGraph workflow locally
-- **Local workflow** (`local_workflow.py`) - single-file LangGraph harness for experimenting with nodes, routing, and state in isolation
+- **Local CLI** (`extras/main.py`) - pick a resume via a file dialog and run the same LangGraph workflow locally
+- **Local workflow** (`extras/local_workflow.py`) - single-file LangGraph harness for experimenting with nodes, routing, and state in isolation
+
+> Formerly-root-level scripts and dead modules were relocated to `extras/` during
+> a cleanup. See [`extras/README.md`](extras/README.md). The `app.py` import chain
+> is unaffected.
 
 ## Features
 
@@ -49,7 +53,7 @@ The project ships three interfaces plus one experimentation workflow:
 
 ### LangGraph Workflow
 
-Production workflow (`graphs/workflow.py`):
+Production workflow (`graphs/resume_workflow.py`):
 
 ```
 START → "analyze" (Analyzer Agent)
@@ -62,7 +66,7 @@ START → "analyze" (Analyzer Agent)
       END  (outputs: ats_score, latex_code)
 ```
 
-Experimentation workflow (`local_workflow.py`) mirrors the same chain in a single file for easy local testing.
+Experimentation workflow (`extras/local_workflow.py`) mirrors the same chain in a single file for easy local testing.
 
 ## Tech Stack
 
@@ -219,7 +223,7 @@ attached by the axios request interceptor; a 401 clears them automatically.
 ### 3. Run the local CLI
 
 ```bash
-python main.py
+python extras/main.py
 ```
 
 A file dialog opens - select a resume PDF, and the LangGraph workflow runs locally: extract text → analyze → print ATS score, feedback, suggestions, and job-vs-resume analysis.
@@ -228,16 +232,16 @@ A file dialog opens - select a resume PDF, and the LangGraph workflow runs local
 
 ```bash
 # Dry-run: print the compiled graph structure + state fields (no LLM calls)
-python local_workflow.py --dry-run
+python extras/local_workflow.py --dry-run
 
 # Analyze a resume (scope=1, stops after analysis)
-python local_workflow.py path\to\resume.pdf
+python extras/local_workflow.py path\to\resume.pdf
 
 # Analyze + rewrite with a template (scope=2)
-python local_workflow.py path\to\resume.pdf --rewrite 3 --jd "Backend AI engineer role..."
+python extras/local_workflow.py path\to\resume.pdf --rewrite 3 --jd "Backend AI engineer role..."
 ```
 
-`local_workflow.py` is a single-file copy of the LangGraph pipeline (state → nodes → conditional routing → compiled workflow → local invocation). It reuses the real `ResumeAgent`, template maps, and guidelines, so it behaves like production — but you can safely tweak nodes/routing to prototype changes without touching `graphs/`.
+`extras/local_workflow.py` is a single-file copy of the LangGraph pipeline (state → nodes → conditional routing → compiled workflow → local invocation). It reuses the real `ResumeAgent`, template maps, and guidelines, so it behaves like production — but you can safely tweak nodes/routing to prototype changes without touching `graphs/`. Both scripts prepend the project root to `sys.path`, so run them from the `project/` directory.
 
 ### 5. Run the template tests
 
@@ -342,14 +346,24 @@ Tokens are signed with HS256 using `JWT_SECRET_KEY`. Access tokens last 300 minu
 ```
 project/
 ├── app.py                     # FastAPI app (routes + StaticFiles(frontend/dist) at "/")
-├── main.py                    # Local CLI entry point (file-dialog flow)
-├── local_workflow.py          # Single-file LangGraph experimentation workflow
-├── clean_up.py                # Deletes caches / build artifacts
 ├── requirements.txt
 ├── .env                       # Secrets (git-ignored)
 ├── .env.example               # Key template (tracked)
 ├── .gitignore
 ├── README.md
+├── docs/
+│   └── architecture.md        # In-depth architecture reference
+├── extras/                    # Relocated scripts + dead code (NOT imported by app.py)
+│   ├── README.md
+│   ├── main.py                # Local CLI entry point (file-dialog flow)
+│   ├── local_workflow.py      # Single-file LangGraph experimentation workflow
+│   ├── clean_up.py            # Deletes caches / build artifacts
+│   ├── data/format.py         # Legacy locked LaTeX format (dead)
+│   ├── data/resume_templates/seed_templates.py   # Seeds resume_templates table
+│   ├── database/operations/candidate_profile.py  # Empty stub (dead)
+│   ├── database/migrations/schema_tables/v2/     # Commented-out future schema (dead)
+│   ├── models/schemas/auth.py                    # Unused Pydantic auth schemas (dead)
+│   └── llms/mistral.py  llms/nvidia.py           # Alternate LLM configs (unused)
 ├── config/
 │   ├── __init__.py
 │   └── settings.py            # Centralized Pydantic Settings (reads .env)
@@ -368,10 +382,9 @@ project/
 ├── data/
 │   ├── __init__.py
 │   ├── guidelines.py              # Strict analysis / ATS optimization guidelines
-│   ├── format.py                  # Original locked LaTeX format + assemble()
 │   └── resume_templates/          # 11 selectable LaTeX template modules
-│       ├── template_1.py .. template_11.py
-│       └── seed_templates.py      # Seeds resume_templates table (ids, names, preview imgs)
+│       ├── _common.py             # Shared escaping / header rendering
+│       └── template_1.py .. template_11.py
 ├── database/
 │   ├── __init__.py
 │   ├── db.py                      # SQLAlchemy engine (DATABASE_URL) + text()
@@ -396,24 +409,22 @@ project/
 ├── graphs/
 │   ├── agent_states.py            # TypedDict workflow state
 │   ├── nodes.py                   # analyze / rewrite / conditional nodes
-│   └── workflow.py                # LangGraph StateGraph compilation
+│   └── resume_workflow.py         # LangGraph StateGraph compilation
 ├── llms/
-│   ├── gemini.py                  # Gemini LLM configuration
-│   ├── mistral.py                 # Mistral LLM configuration
-│   └── nvidia.py                  # NVIDIA LLM configuration
+│   └── gemini.py                  # Gemini LLM configuration
 ├── models/
-│   ├── classes.py                 # shared dataclasses / row models
-│   ├── schemas/
-│   │   └── auth.py                # Pydantic API schemas (Token, User, ...)
+│   ├── classes.py                 # BaseLLM registration wrapper
 │   └── structured_outputs.py      # LLM output models (analyzer / rewrite / JD match)
-├── prompts/                       # Reserved for prompt templates (currently empty)
-├── services/                      # Reserved service layer (currently empty)
 ├── utils/
 │   ├── jwt.py                     # create_access_token / create_refresh_token
 │   ├── token_hash.py              # refresh-token hashing
 │   ├── latex_compiler.py          # LaTeX → PDF via pdflatex
+│   ├── pdf_preview.py             # PDF → PNG preview via PyMuPDF
+│   ├── cloudinary_upload.py       # preview upload
+│   ├── candidate_info.py          # identity extraction from resume text
 │   ├── mapping.py                 # template index → format/assemble/rules
-│   └── pdf_read.py                # PDF text extraction (+ file dialog for CLI)
+│   └── pdf_read.py                # PDF text extraction
+├── tests/                         # Template compilation + identity tests
 └── output/
     └── resumes/                   # compiled PDFs/TeX (git-ignored)
 ```
@@ -434,7 +445,7 @@ The `agentState` carries: `data`, `guidelines`, `job_description`, `scope`, `res
 
 - `api/controllers/resume.py` invokes the workflow with `scope=1` for analysis-only, or `scope=2` + `resume_format` for the full rewrite path.
 - The rewrite node picks `format` / `format_rules` / `assemble()` via `utils/mapping.py`, then returns the assembled `latex_code` and the higher of the two ATS scores.
-- `local_workflow.py` reuses the same `agentState`, `ResumeAgent`, and template maps to build an identical graph in one file — edit its nodes/routing to experiment locally without touching the production `graphs/`.
+- `extras/local_workflow.py` reuses the same `agentState`, `ResumeAgent`, and template maps to build an identical graph in one file — edit its nodes/routing to experiment locally without touching the production `graphs/`.
 
 ### Agents & Structured Outputs (`agents/`, `models/structured_outputs.py`)
 
@@ -479,7 +490,7 @@ Each `template_N.py` exposes `format`, `format_rules`, and `assemble()`:
 
 **Identity is supplied per call, not baked into the template.** A template renders a
 different header for every candidate, so the 11 templates are safe to share across
-users. `graphs/nodes.py` and `local_workflow.py` call
+users. `graphs/nodes.py` and `extras/local_workflow.py` call
 `extract_candidate_info(state["data"])` on the uploaded resume's extracted text and
 pass the result as `info`. Missing fields fall back to obvious placeholders
 (`[CANDIDATE NAME]`, …) rather than leaking the template author's details.
@@ -540,7 +551,7 @@ Edit `data/resume_templates/template_N.py`:
 
 ### Add a Template
 1. Create `data/resume_templates/template_12.py` (copy an existing one)
-2. Seed a row in `resume_templates` (see `data/resume_templates/seed_templates.py`) so the frontend picker can list it
+2. Seed a row in `resume_templates` (see `extras/data/resume_templates/seed_templates.py`) so the frontend picker can list it
 3. `utils/mapping.py` auto-discovers every `template_*.py` for the LaTeX side
 
 > `utils/mapping.py` builds `template_map` / `assemble_map` / `format_rules_map` keyed by index, so the LaTeX template index and the `resume_templates.template_id` row must be kept in agreement.
@@ -560,9 +571,9 @@ Modify `models/structured_outputs.py` to change analyzer/rewrite output schema.
 ## Roadmap / Known Issues
 
 - `GET /resumes` (resume history) is not implemented; the History page says so explicitly
-- `services/` and `prompts/` are reserved but currently empty (service layer & prompt templates to be added)
-- `main.py` (CLI) is a thin local harness; the API + controllers are the primary interface
-- `local_workflow.py` is the sandbox for iterating on nodes/routing; promote stable changes back into `graphs/nodes.py` and `graphs/workflow.py`
+- `services/` and `prompts/` are reserved but currently empty (service layer & prompt templates to be added); their empty `__init__.py` files now live in `extras/`
+- `extras/main.py` (CLI) is a thin local harness; the API + controllers are the primary interface
+- `extras/local_workflow.py` is the sandbox for iterating on nodes/routing; promote stable changes back into `graphs/nodes.py` and `graphs/resume_workflow.py`
 - Frontend `npm run lint` reports 2 pre-existing `react-refresh/only-export-components` errors (a `useAuth`/`useTheme` hook exported from the same file as its provider); fix by splitting the hooks into their own modules
 - `pdfjs-dist` is still listed in `frontend/package.json` but nothing imports it
 
